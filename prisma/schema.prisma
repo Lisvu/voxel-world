@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  worlds       World[]
+}
+
+model Session {
+  tokenHash String   @id
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model World {
+  id               String       @id @default(uuid()) @db.Uuid
+  ownerId          String       @db.Uuid
+  name             String
+  seed             Int
+  generatorVersion Int          @default(1)
+  revision         Int          @default(0)
+  blockCount       Int          @default(0)
+  playerState      Json
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  owner            User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chunks           WorldChunk[]
+  @@index([ownerId, updatedAt])
+}
+
+model WorldChunk {
+  worldId String @db.Uuid
+  x       Int
+  z       Int
+  edits   Json
+  world   World  @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  @@id([worldId, x, z])
+}

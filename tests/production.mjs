@@ -1,0 +1,42 @@
+import 'dotenv/config';
+import { chromium, expect } from '@playwright/test';
+import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import assert from 'node:assert/strict';
+
+const base = 'http://127.0.0.1:3001';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const db = new PrismaClient(), email = `production-${randomUUID()}@example.test`;
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+try {
+  await page.goto(base); await expect(page.getByRole('button', { name: '登录世界' })).toBeVisible();
+  await page.screenshot({ path: 'screenshots/final-login.png' });
+  const register = await page.request.post(base + '/api/auth/register', { headers: { 'X-Voxel-Client': 'web' }, data: { email, name: '河谷建造者', password: 'Production-test-password!' } });
+  assert.equal(register.status(), 201); const user = await register.json();
+  const response = await page.request.post(base + '/api/worlds', { headers: { 'X-Voxel-Client': 'web' }, data: { name: '青木河谷', seed: 248 } });
+  const world = await response.json(); assert.equal(response.status(), 201);
+  await page.reload(); await page.getByRole('button', { name: '进入 青木河谷', exact: true }).click();
+  await page.waitForFunction(() => window.__voxel?.getState().ready);
+  assert((await page.evaluate(() => window.__voxel.getState().blocks)) > 1000);
+  await page.locator('#day-toggle').click();
+  await expect.poll(async () => (await (await page.request.get(`${base}/api/worlds/${world.id}`)).json()).revision).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '我的世界', exact: true }).click();
+  await expect(page.getByRole('button', { name: '进入 青木河谷', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'screenshots/final-lobby.png' });
+  const latest = await (await page.request.get(`${base}/api/worlds/${world.id}`)).json();
+  await page.evaluate(({ userId, worldId, snapshot }) => localStorage.setItem(`voxel-backup:${userId}:${worldId}:recovery-test`, JSON.stringify({ revision: 0, snapshot: { ...snapshot, selected: 3, changes: [['0,8,0', 7]] } })), { userId: user.id, worldId: world.id, snapshot: latest.snapshot });
+  await page.getByRole('button', { name: '进入 青木河谷', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '发现未同步的进度' })).toBeVisible();
+  await page.getByRole('button', { name: '恢复为新世界' }).click();
+  await page.waitForFunction(() => window.__voxel?.getState().ready);
+  assert.equal(await page.evaluate(() => window.__voxel.getState().selected), 3);
+  const worlds = await (await page.request.get(`${base}/api/worlds`)).json(); assert.equal(worlds.length, 2);
+  const unchanged = await (await page.request.get(`${base}/api/worlds/${world.id}`)).json();
+  assert.deepEqual(unchanged.snapshot.changes, latest.snapshot.changes);
+  assert.deepEqual(errors, []);
+  const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await mobile.goto(base); await expect(mobile.getByRole('button', { name: '登录世界' })).toBeVisible();
+  await mobile.screenshot({ path: 'screenshots/final-mobile-login.png' });
+  console.log('Built React assets served by NestJS; CSP permits WebGL/WASM; authenticated save and isolated draft recovery passed.');
+} finally { await browser.close(); await db.user.deleteMany({ where: { email } }); await db.$disconnect(); }
