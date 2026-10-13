@@ -16,7 +16,9 @@
     "db:local": "node scripts/local-db.mjs start",
     "db:stop": "node scripts/local-db.mjs stop",
     "test:api": "node --test tests/api.test.mjs",
-    "test:e2e": "node tests/browser.mjs"
+    "test:e2e": "node tests/browser.mjs",
+    "test:frontend": "node --test tests/frontend.test.mjs",
+    "test:frontend:browser": "node tests/frontend-browser.mjs"
   },
   "dependencies": {
     "three": "^0.180.0", "@dimforge/rapier3d-compat": "^0.19.0", "lucide": "^0.468.0",
@@ -34,3 +36,4 @@
     "prisma": "^6.19.0", "concurrently": "^9.2.0", "@playwright/test": "^1.56.0"
   }
 }
+

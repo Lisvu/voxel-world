@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { createIcons, Box, Check, Sun, Moon, Maximize, Pause, Play, LoaderCircle, Layers3, Pickaxe, Plus, ArrowUp, X, MapPin, Save, Sprout } from 'lucide';
+import { blockTypes, defaults, readSettings, placementError, type Settings } from './features';
 import type { Snapshot } from '../../shared/contracts';
 
 let rapierReady: Promise<void> | undefined;
@@ -27,15 +28,8 @@ const blocks = new Map<string, number>();
 const changes = new Map<string, number>();
 const colliders = new Map<string, RAPIER.Collider>();
 const directions = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-const types = [
-  { id: 1, name: '草方块', color: '#679348', side: '#826245' },
-  { id: 2, name: '泥土', color: '#92704f' },
-  { id: 3, name: '岩石', color: '#929c9c' },
-  { id: 4, name: '橡木', color: '#947048' },
-  { id: 5, name: '树叶', color: '#4d8050' },
-  { id: 6, name: '细沙', color: '#dbc68c' },
-  { id: 7, name: '木板', color: '#ba955e' },
-];
+const types = blockTypes;
+let settings = readSettings();
 const key = (x: number,y: number,z: number) => `${x},${y},${z}`;
 let seed = initial.seed, selected = 1, meshes: THREE.InstancedMesh[] = [], active = false, started = false, ready = false;
 let yaw = -1.05, pitch = -0.22, verticalVelocity = 0, grounded = false, night = false;
@@ -91,8 +85,11 @@ for(const type of types){
   button.title=`${type.name} · ${type.id}`;button.setAttribute('aria-label',type.name);button.setAttribute('aria-pressed',String(type.id===selected));button.dataset.type=String(type.id);
   button.innerHTML=`<span class="number">${type.id}</span><img class="block-icon" src="${top.url}" alt="" /><span class="infinity">∞</span>`;
   button.onclick=()=>select(type.id);$('hotbar').append(button);
+  const card = document.createElement('button'); card.className='material-card'; card.dataset.type=String(type.id); card.setAttribute('aria-pressed', 'false');
+  card.innerHTML=`<img src="${top.url}" alt="" /><strong>${type.name}</strong><span>${type.description}</span><small>快捷键 ${type.id} · 无限供应</small>`;
+  card.onclick=()=>{select(type.id);toast(`已选择${type.name}`);};$('material-grid').append(card);
 }
-function select(id: number){selected=id;$('selected-name').textContent=types[id-1].name;document.querySelectorAll<HTMLElement>('.slot').forEach(b=>{b.classList.toggle('active',Number(b.dataset.type)===id);b.setAttribute('aria-pressed',String(Number(b.dataset.type)===id));});}
+function select(id: number){selected=id;$('selected-name').textContent=types[id-1].name;document.querySelectorAll<HTMLElement>('.slot, .material-card').forEach(b=>{b.classList.toggle('active',Number(b.dataset.type)===id);b.setAttribute('aria-pressed',String(Number(b.dataset.type)===id));});if(ready)scheduleSave();}
 
 const renderer=new THREE.WebGLRenderer({canvas:$<HTMLCanvasElement>('world'),antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
@@ -115,7 +112,50 @@ const water=new THREE.Mesh(new THREE.PlaneGeometry(SIZE*2+1,SIZE*2+1),new THREE.
 water.rotation.x=-Math.PI/2;water.position.y=3.17;scene.add(water);
 const ocean=new THREE.Mesh(new THREE.PlaneGeometry(300,300),new THREE.MeshLambertMaterial({color:0x6eb3c3}));ocean.rotation.x=-Math.PI/2;ocean.position.y=-.65;scene.add(ocean);
 const outline=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.009,1.009,1.009)),new THREE.LineBasicMaterial({color:0xe8ffc7,transparent:true,opacity:.9}));outline.visible=false;scene.add(outline);
+const preview = new THREE.Mesh(new THREE.BoxGeometry(1.015,1.015,1.015), new THREE.MeshBasicMaterial({color:0x83df9d, transparent:true, opacity:.38, depthWrite:false}));
+preview.visible=false;scene.add(preview);
 const ray=new THREE.Raycaster();ray.far=6;
+const mapCanvas=$<HTMLCanvasElement>('minimap-canvas'), mapContext=mapCanvas.getContext('2d')!;
+const terrain=document.createElement('canvas');terrain.width=terrain.height=57;
+const terrainContext=terrain.getContext('2d')!;
+function rebuildMap(){
+  const tops=new Map<string,{y:number,type:number}>();
+  for(const [k,type] of blocks){const [x,y,z]=k.split(',').map(Number);const column=`${x},${z}`;if(!tops.has(column)||tops.get(column)!.y<y)tops.set(column,{y,type});}
+  terrainContext.fillStyle='#4eafb9';terrainContext.fillRect(0,0,57,57);
+  for(const [column,top] of tops){const [x,z]=column.split(',').map(Number);terrainContext.fillStyle=top.y<3?'#4eafb9':types[top.type-1].color;terrainContext.fillRect(x+SIZE,z+SIZE,1,1);}
+}
+function drawMap(){
+  if($('minimap').classList.contains('collapsed'))return;
+  const ctx=mapContext, scale=mapCanvas.width/57;ctx.imageSmoothingEnabled=false;ctx.drawImage(terrain,0,0,mapCanvas.width,mapCanvas.height);
+  ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect((SIZE-.8)*scale,(SIZE+12-.8)*scale,1.6*scale,1.6*scale);
+  const p=body.translation();ctx.save();ctx.translate(Math.max(6,Math.min(mapCanvas.width-6,(p.x+SIZE+.5)*scale)),Math.max(6,Math.min(mapCanvas.height-6,(p.z+SIZE+.5)*scale)));ctx.rotate(-yaw);ctx.beginPath();ctx.moveTo(0,-7);ctx.lineTo(5,5);ctx.lineTo(0,3);ctx.lineTo(-5,5);ctx.closePath();ctx.fillStyle='#fff';ctx.strokeStyle='#182d22';ctx.fill();ctx.stroke();ctx.restore();
+}
+function applySettings(){
+  camera.fov=settings.fov;camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(devicePixelRatio,{low:1,medium:1.5,high:2}[settings.quality]));
+  renderer.shadowMap.enabled=settings.shadows;scene.traverse(o=>{if(o instanceof THREE.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])m.needsUpdate=true;});
+}
+function displaySettings(){
+  for(const name of ['sensitivity','touchSensitivity','fov','volume'] as const){$<HTMLInputElement>(`setting-${name}`).value=String(settings[name]);$(`value-${name}`).textContent=String(settings[name]);}
+  $<HTMLSelectElement>('setting-quality').value=settings.quality;$<HTMLInputElement>('setting-shadows').checked=settings.shadows;
+}
+function openPanel(id:string){
+  active=false;keys.clear();joystick.x=joystick.y=0;$('stick').style.transform='';
+  $<HTMLDialogElement>('menu').close();$<HTMLDialogElement>(id).showModal();document.exitPointerLock?.();document.body.classList.add('paused');void saveWorld();
+}
+function closePanel(id:string){$<HTMLDialogElement>(id).close();pause();}
+$('open-settings').onclick=()=>openPanel('settings-panel');$('open-materials').onclick=()=>openPanel('materials-panel');
+$('menu-settings').onclick=()=>openPanel('settings-panel');$('menu-materials').onclick=()=>openPanel('materials-panel');
+for(const id of ['settings-panel','materials-panel']){ $(`${id}-close`).onclick=()=>closePanel(id);listen($(id),'cancel',e=>{e.preventDefault();closePanel(id);}); }
+for(const name of ['sensitivity','touchSensitivity','fov','volume','quality','shadows'] as const){listen($(`setting-${name}`),'input',()=>{
+  const input=$<HTMLInputElement>(`setting-${name}`);
+  settings={...settings,[name]:name==='shadows'?input.checked:name==='quality'?input.value:Number(input.value)} as Settings;
+  displaySettings();applySettings();try{localStorage.setItem('voxel-settings-v1',JSON.stringify(settings));}catch{toast('浏览器无法保存设置，本次游戏仍然生效');}
+});}
+$('reset-settings').onclick=()=>{settings={...defaults};displaySettings();applySettings();try{localStorage.setItem('voxel-settings-v1',JSON.stringify(settings));}catch{toast('设置仅在本次游戏生效');}};
+$('minimap-toggle').onclick=()=>{const collapsed=$('minimap').classList.toggle('collapsed');$('minimap-toggle').setAttribute('aria-expanded',String(!collapsed));$('minimap-toggle').textContent=collapsed?'展开地图':'收起地图';};
+$('minimap-expand').onclick=()=>{const large=$('minimap').classList.toggle('large');$('minimap-expand').textContent=large?'缩小':'放大';};
+displaySettings();applySettings();
 const dummy=new THREE.Object3D();
 const particles: { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }[]=[];
 const particleGeometry=new THREE.BoxGeometry(.085,.085,.085);
@@ -140,6 +180,7 @@ function generate(){
 }
 function exposed(x: number,y: number,z: number){return directions.some(([a,b,c])=>!blocks.has(key(x+a,y+b,z+c)));}
 function rebuild(){
+  rebuildMap();
   for(const m of meshes){scene.remove(m);m.dispose();}meshes=[];
   const groups: number[][][]=Array.from({length:8},()=>[]),visible=new Set<string>();
   for(const [k,t] of blocks){const [x,y,z]=k.split(',').map(Number);if(!exposed(x,y,z))continue;visible.add(k);groups[t].push([x,y,z]);
@@ -172,24 +213,27 @@ function scheduleSave(){$('save-state').textContent='保存中';clearTimeout(sav
 
 function updateTarget(){
   ray.setFromCamera(new THREE.Vector2(0,0),camera);
-  const hit=ray.intersectObjects(meshes,false)[0];target=null;outline.visible=false;$('target-label').textContent='';
-  if(!hit||!active)return;
+  const hit=ray.intersectObjects(meshes,false)[0];target=null;outline.visible=false;preview.visible=false;$('target-label').textContent='';
+  if(!active)return;if(!hit){$('target-label').textContent='请对准 6 格内的方块';return;}
   const p=hit.object.userData.positions[hit.instanceId!];target={position:p,normal:hit.face!.normal.clone(),type:hit.object.userData.type};
-  outline.position.set(p[0],p[1],p[2]);outline.visible=true;$('target-label').textContent=types[target.type-1].name;
+  outline.position.set(p[0],p[1],p[2]);outline.visible=true;const [x,y,z]=placement();const reason=canPlace(x,y,z);preview.position.set(x,y,z);preview.material.color.set(reason?0xf16d68:0x83df9d);preview.visible=true;
+  $('target-label').textContent=`${types[target.type-1].name} · ${reason||'可放置 '+types[selected-1].name}`;
 }
+function placement(){const p=target!.position,n=target!.normal;return [p[0]+Math.round(n.x),p[1]+Math.round(n.y),p[2]+Math.round(n.z)];}
+function canPlace(x:number,y:number,z:number){return placementError(x,y,z,body.translation(),blocks.has(key(x,y,z)),changes.size>=30000&&!changes.has(key(x,y,z)));}
+function pickMaterial(){if(!active)return;updateTarget();if(target){select(target.type);toast(`已选择${types[target.type-1].name}`);}else toast('请对准 6 格内的方块');}
 let audioContext: AudioContext | undefined;
 function sound(place=false){
-  try{audioContext??=new AudioContext();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type='triangle';osc.frequency.setValueAtTime(place?240:130,audioContext.currentTime);osc.frequency.exponentialRampToValueAtTime(55,audioContext.currentTime+.08);gain.gain.setValueAtTime(.045,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.09);osc.connect(gain);gain.connect(audioContext.destination);osc.start();osc.stop(audioContext.currentTime+.1);}catch{}
+  if(settings.volume===0)return;
+  try{audioContext??=new AudioContext();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type='triangle';osc.frequency.setValueAtTime(place?240:130,audioContext.currentTime);osc.frequency.exponentialRampToValueAtTime(55,audioContext.currentTime+.08);gain.gain.setValueAtTime(.045*settings.volume/100,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.09);osc.connect(gain);gain.connect(audioContext.destination);osc.start();osc.stop(audioContext.currentTime+.1);}catch{}
 }
 function edit(place: boolean){
   if(!active)return;updateTarget();if(!target)return;
   let [x,y,z]=target.position;
   if(place){
     x+=Math.round(target.normal.x);y+=Math.round(target.normal.y);z+=Math.round(target.normal.z);
-    if(Math.abs(x)>SIZE||Math.abs(z)>SIZE||y<0||y>32){toast('已到达世界边界');return;}
-    if(changes.size>=30000&&!changes.has(key(x,y,z))){toast('已达到此世界的修改上限');return;}
-    const p=body.translation();if(Math.abs(x-p.x)<.82&&Math.abs(z-p.z)<.82&&Math.abs(y-p.y)<1.35)return;
-    if(blocks.has(key(x,y,z)))return;blocks.set(key(x,y,z),selected);changes.set(key(x,y,z),selected);placed++;
+    const reason=canPlace(x,y,z);if(reason){toast(reason);return;}
+    blocks.set(key(x,y,z),selected);changes.set(key(x,y,z),selected);placed++;
   }else{
     if(y===0){toast('已到达基岩层');return;}
     if(changes.size>=30000&&!changes.has(key(x,y,z))){toast('已达到此世界的修改上限');return;}
@@ -217,14 +261,17 @@ function pause(){
 }
 listen(document,'pointerlockchange',()=>{
   if(document.pointerLockElement===$('world')){active=true;started=true;document.body.classList.add('playing');document.body.classList.remove('paused');}
-  else if(started&&!$<HTMLDialogElement>('menu').open)pause();
+  else if(started&&!document.querySelector('dialog[open]'))pause();
 });
-listen(document,'mousemove',e=>{if(!active||touch)return;yaw-=e.movementX*.0023;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023,-1.5,1.5);});
+listen(document,'mousemove',e=>{if(!active||touch)return;yaw-=e.movementX*.0023*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023*settings.sensitivity,-1.5,1.5);});
 listen(document,'keydown',e=>{
-  if(e.target instanceof HTMLInputElement)return;
+  if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open]'))return;
   if(e.code==='Escape'&&active){e.preventDefault();pause();return;}
   if(!active)return;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
+  if(e.code==='KeyE'){e.preventDefault();openPanel('materials-panel');return;}
+  if(e.code==='KeyB'){e.preventDefault();pickMaterial();return;}
+  if(e.code==='KeyM'){e.preventDefault();$(e.shiftKey?'minimap-expand':'minimap-toggle').click();return;}
   keys.add(e.code);
   if(/^Digit[1-7]$/.test(e.code))select(+e.code.slice(-1));
   if(e.code==='Space'&&!e.repeat&&grounded)verticalVelocity=7.7;
@@ -233,7 +280,7 @@ listen(document,'keyup',e=>keys.delete(e.code));
 listen(window,'blur',()=>{keys.clear();if(active)pause();});
 listen(document,'visibilitychange',()=>{if(document.hidden&&active)pause();});
 listen($('world'),'contextmenu',e=>e.preventDefault());
-listen($('world'),'mousedown',e=>{if(touch)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);});
+listen($('world'),'mousedown',e=>{if(touch)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
 listen($('world'),'wheel',e=>{if(!active)return;e.preventDefault();select((selected-1+(e.deltaY>0?1:6))%7+1);},{passive:false});
 $('play').onclick=enter;$('resume').onclick=enter;$('close-menu').onclick=enter;$('pause').onclick=pause;
 listen($('menu'),'cancel',e=>{e.preventDefault();enter();});
@@ -241,10 +288,11 @@ $('respawn').onclick=()=>{spawn();saveWorld();enter();};$('save').onclick=()=>sa
 $('world-list').onclick=async()=>{if(await saveWorld())leave();else toast('存档尚未同步，请重试保存后返回');};
 $('day-toggle').onclick=()=>toggleDay();
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{toast('此浏览器不支持全屏');}};
+$('pick-material').onclick=pickMaterial;
 $('break').onclick=()=>edit(false);$('place').onclick=()=>edit(true);$('jump').onpointerdown=e=>{e.preventDefault();if(active&&grounded)verticalVelocity=7.7;};
 let lookPointer: { id: number; x: number; y: number } | null;
 listen($('world'),'pointerdown',e=>{if(!touch||!active)return;lookPointer={id:e.pointerId,x:e.clientX,y:e.clientY};$('world').setPointerCapture(e.pointerId);});
-listen($('world'),'pointermove',e=>{if(!lookPointer||e.pointerId!==lookPointer.id)return;yaw-=(e.clientX-lookPointer.x)*.005;pitch=THREE.MathUtils.clamp(pitch-(e.clientY-lookPointer.y)*.005,-1.5,1.5);lookPointer.x=e.clientX;lookPointer.y=e.clientY;});
+listen($('world'),'pointermove',e=>{if(!lookPointer||e.pointerId!==lookPointer.id)return;yaw-=(e.clientX-lookPointer.x)*.005*settings.touchSensitivity;pitch=THREE.MathUtils.clamp(pitch-(e.clientY-lookPointer.y)*.005*settings.touchSensitivity,-1.5,1.5);lookPointer.x=e.clientX;lookPointer.y=e.clientY;});
 const endLook=()=>{lookPointer=null;};listen($('world'),'pointerup',endLook);listen($('world'),'pointercancel',endLook);
 let stickPointer: number | null;
 function moveStick(e: PointerEvent){const r=$('joystick').getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/35,y=(e.clientY-r.top-r.height/2)/35;const len=Math.hypot(x,y);if(len>1){x/=len;y/=len;}joystick.x=x;joystick.y=y;$('stick').style.transform=`translate(${x*29}px,${y*29}px)`;}
@@ -275,8 +323,8 @@ function animate(time: number){
   else accumulator=0;
   clouds.position.x=Math.sin(time*.000015)*4;
   for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;p.velocity.y-=9*dt;p.mesh.position.addScaledVector(p.velocity,dt);p.mesh.scale.setScalar(Math.max(0,p.life/.6));if(p.life<=0){scene.remove(p.mesh);particles.splice(i,1);}}
-  camera.updateMatrixWorld();if(active&&frames%3===0)updateTarget();if(!active)outline.visible=false;
-  if(ready&&frames%15===0){const p=body.translation();$('coordinates').textContent=`X ${Math.round(p.x)} / Y ${Math.round(p.y)} / Z ${Math.round(p.z)}`;const compass=['N','NW','W','SW','S','SE','E','NE'];$('compass').textContent=compass[((Math.round(yaw/(Math.PI/4))%8)+8)%8];}
+  camera.updateMatrixWorld();if(active&&frames%3===0)updateTarget();if(!active){outline.visible=false;preview.visible=false;}
+  if(ready&&frames%15===0){drawMap();const p=body.translation();$('coordinates').textContent=`X ${Math.round(p.x)} / Y ${Math.round(p.y)} / Z ${Math.round(p.z)}`;const compass=['N','NW','W','SW','S','SE','E','NE'];$('compass').textContent=compass[((Math.round(yaw/(Math.PI/4))%8)+8)%8];}
   frames++;renderer.render(scene,camera);
 }
 async function init(){
@@ -287,7 +335,7 @@ async function init(){
   controller=physics.createCharacterController(.015);controller.enableSnapToGround(.2);controller.enableAutostep(.4,.2,false);spawn();
   if(saved.position&&Object.values(saved.position).every(Number.isFinite)&&Math.abs(saved.position.x)<=SIZE&&Math.abs(saved.position.z)<=SIZE&&saved.position.y>0&&saved.position.y<36){body.setTranslation(saved.position,true);body.setNextKinematicTranslation(saved.position);yaw=Number.isFinite(saved.yaw)?saved.yaw:yaw;pitch=THREE.MathUtils.clamp(Number.isFinite(saved.pitch)?saved.pitch:pitch,-1.5,1.5);physics.step();updateCamera();}
   if(saved?.selected>=1&&saved.selected<=7)select(saved.selected);if(saved?.night)toggleDay(true);
-  ready=true;$('world-seed').textContent=`世界 ${String(seed).padStart(4,'0')}`;
+  select(selected);ready=true;$('world-seed').textContent=`世界 ${String(seed).padStart(4,'0')}`;
   $<HTMLButtonElement>('play').disabled=false;$('play').innerHTML='<i data-lucide="play"></i><span>进入世界</span>';refreshIcons();
   if(saved)$('gate-meta').textContent='青木河谷 · 继续上次的世界';
   // Read-only diagnostics make browser smoke tests inspect the real simulation.
@@ -306,8 +354,10 @@ return {
     geometries.add(particleGeometry);particleMaterials.forEach(mat=>mats.add(mat));
     geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());
     meshes.forEach(m=>m.dispose());physics.free();renderer.dispose();renderer.forceContextLoss();void audioContext?.close();
+    document.getElementById('hotbar')?.replaceChildren();document.getElementById('material-grid')?.replaceChildren();
     delete window.__voxel;
   },
 };
 }
 export type GameHandle = Awaited<ReturnType<typeof startGame>>;
+
