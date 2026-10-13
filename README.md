@@ -6,12 +6,14 @@
 
 ## 本机启动
 
-本机已配置独立 PostgreSQL 17，数据在 `.local/postgres`，仅监听 `127.0.0.1:55432`。
+首次运行需要先安装依赖和 PostgreSQL 17，并按下方步骤初始化。`db:local` 将数据库保存到 `.local/postgres`，仅监听 `127.0.0.1:55432`。
 数据库密码自动生成，位于被 Git 忽略的 `.env`，不要提交该文件。
 
 ```sh
 cd ~/voxel-world
 npm run db:local
+npm run db:generate
+npm run db:migrate
 npm run dev
 ```
 
@@ -154,3 +156,9 @@ TEST_WEB_URL=http://localhost:5173 npm run test:modes:browser
 ```
 
 覆盖确定性地形、旧河谷逐格兼容、负坐标区块重建、600 秒昼夜比例、背包消耗和死亡规则；浏览器覆盖六种地貌、跨区块移动、生物蛋、天气、生命与存档恢复。真实 PostgreSQL 保存测试使用 `npm run test:api`，需启动数据库和后端。新增状态存储在已有 JSON 字段，无新增数据库迁移。
+
+## 本地网页无法访问
+
+`http://localhost:5173/` 只有在当前电脑上运行开发服务时才能访问。若浏览器提示“无法访问此网站”，先确认数据库和 `npm run dev` 均已启动，启动终端必须保持运行；重启电脑后需要重新启动。不要仅运行 `dev:web`，账号和存档还需要后端与数据库。
+
+确认前端终端输出的实际端口，并访问 `/api/health` 检查后端连通性。若启动报 `Cannot find package 'express'`，更新代码后重新执行 `npm ci`，再启动服务。
