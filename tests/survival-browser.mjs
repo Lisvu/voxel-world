@@ -1,0 +1,26 @@
+import {chromium} from '@playwright/test';import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+const origin=process.env.TEST_WEB_URL??'http://localhost:5173';
+const changes=[];for(let x=-5;x<=5;x++)for(let z=5;z<=16;z++)changes.push([`${x},20,${z}`,3]);
+const snapshot={version:1,seed:42,generatorVersion:2,changes,gameMode:'survival',health:12,hunger:8,inventory:{125:1,200:2,34:6,4:10},durability:{125:2},selected:125,position:{x:0,y:21.3,z:12},yaw:0,pitch:-.6,timeSeconds:200,creatures:[],drops:[]};
+let saved;
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{Element.prototype.requestPointerLock=function(){return Promise.reject(new Error('Unavailable'));};});
+ await page.route('**/api/**',async route=>{const path=new URL(route.request().url()).pathname;const world={id:'test',name:'测试世界',seed:42,revision:0,updatedAt:new Date().toISOString(),blockCount:0,snapshot};if(path.endsWith('/save')){saved=route.request().postDataJSON().snapshot;await route.fulfill({json:{revision:1}});return;}await route.fulfill({json:path==='/api/auth/me'?{id:'test-user',name:'测试',email:'test@example.test'}:path==='/api/worlds'?[world]:world});});
+ await page.goto(origin);await page.getByRole('button',{name:'进入 测试世界'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);await page.locator('#play').click();await page.waitForFunction(()=>window.__voxel.getState().active);
+ const state=()=>page.evaluate(()=>window.__voxel.getState());
+ const before=await state();await page.mouse.move(700,420);await page.mouse.move(710,420);await page.waitForTimeout(80);assert.notEqual((await state()).yaw,before.yaw,'trackpad-style hover rotates without holding');await page.keyboard.press('t');
+ await page.keyboard.press('f');await page.waitForFunction(()=>window.__voxel.getState().mined>=1);assert.equal((await state()).durability[125],1);
+ await page.keyboard.down('w');await page.waitForTimeout(500);await page.keyboard.up('w');await page.waitForFunction(()=>(window.__voxel.getState().inventory[3]??0)>0);
+ await page.keyboard.press('e');await page.locator('[data-item="200"]').click();await page.locator('#materials-panel-close').click();await page.locator('#resume').click();await page.keyboard.press('r');assert.equal((await state()).inventory[200],1);assert.ok((await state()).hunger>before.hunger);
+ await page.keyboard.press('e');await page.locator('#craft-grid').getByRole('button',{name:'合成钻石剑'}).click();assert.equal((await state()).inventory[126],1);assert.equal((await state()).durability[126],1562);assert.equal((await state()).inventory[34],4);assert.equal(await page.locator('.egg-card').count(),10);
+ await page.locator('#materials-panel-close').click();await page.locator('#save').click();await page.waitForTimeout(500);assert.equal(saved.durability[126],1562);assert.ok(saved.hunger>8);assert.deepEqual(errors,[]);console.log('Trackpad hover, timed mining, tool wear, magnetic pickup, eating, crafting, ten eggs and save passed.');
+ snapshot.selected=126;snapshot.inventory={126:1};snapshot.durability={126:2};snapshot.pitch=-.25;snapshot.hunger=0;snapshot.health=10;snapshot.position={x:0,y:21.3,z:12};
+ snapshot.creatures=['cow','sheep','chicken','fish','yak','villager','swallow','eagle','sparrow','cat'].map((species,i)=>({id:'test-'+species,species,x:i===0?0:10+i,y:species==='fish'?10:['swallow','eagle','sparrow'].includes(species)?30:20.5,z:10,yaw:0}));
+ await page.reload();await page.evaluate(()=>localStorage.clear());await page.getByRole('button',{name:'进入 测试世界'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);await page.locator('#play').click();await page.waitForFunction(()=>window.__voxel.getState().active);await page.keyboard.press('t');
+ await page.keyboard.press('f');await page.waitForTimeout(600);await page.keyboard.press('f');await page.waitForTimeout(200);assert.equal((await state()).inventory[126],0,'weapon breaks after its final use');
+ await page.keyboard.down('w');await page.waitForTimeout(500);await page.keyboard.up('w');await page.waitForFunction(()=>(window.__voxel.getState().inventory[202]??0)>0);
+ await page.waitForFunction(()=>window.__voxel.getState().health<10,{},{timeout:8000});await page.keyboard.press('Escape');await page.locator('#save').click();await page.waitForTimeout(500);assert.ok(saved.deadCreatures.includes('test-cow'));assert.deepEqual(errors,[]);console.log('Ten creature models, combat, creature drops, weapon breakage, starvation and death persistence passed.');
+ await page.screenshot({path:'screenshots/survival-upgrade-test.png'});
+}finally{await browser.close();}

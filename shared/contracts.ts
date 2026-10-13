@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validItem, tools } from './items.js';
 
 export const WORLD_SIZE = 32768;
 export const GENERATOR_VERSION = 2;
@@ -10,30 +11,34 @@ const blockKey = z.string().regex(/^-?\d+,[1-9]\d*,-?\d+$/).refine(value => {
   const [x, y, z] = value.split(',').map(Number);
   return Math.abs(x) <= WORLD_SIZE && Math.abs(z) <= WORLD_SIZE && y < 96 && `${x},${y},${z}` === value;
 }, '方块坐标超出范围');
-export const speciesSchema = z.enum(['cow','sheep','chicken','fish','yak']);
+export const speciesSchema = z.enum(['cow','sheep','chicken','fish','yak','villager','swallow','eagle','sparrow','cat']);
 export type Species = z.infer<typeof speciesSchema>;
-export const creatureSchema = z.object({ id:z.string().max(80), species:speciesSchema, x:finite.min(-32768).max(32768), y:finite.min(0).max(100), z:finite.min(-32768).max(32768), yaw:finite }).strict();
+export const creatureSchema = z.object({ id:z.string().max(80), species:speciesSchema, x:finite.min(-32768).max(32768), y:finite.min(0).max(100), z:finite.min(-32768).max(32768), yaw:finite, health:finite.min(0).max(40).optional() }).strict();
 export type CreatureSave = z.infer<typeof creatureSchema>;
 export const gameModeSchema=z.enum(['survival','creative']);
-export const inventorySchema=z.record(z.string().regex(/^(?:[1-9]|1[0-3])$/),z.number().int().min(0).max(9999));
-export const dropSchema=z.object({id:z.string().max(80),position:positionSchema,items:inventorySchema}).strict();
+export const inventorySchema=z.record(z.string().refine(v=>String(Number(v))===v&&validItem(Number(v))),z.number().int().min(0).max(9999));
+export const durabilitySchema=z.record(z.string().refine(v=>tools.some(t=>String(t.id)===v)),z.number().int().min(1).max(1562)).default({});
+export const dropSchema=z.object({id:z.string().max(80),position:positionSchema,items:inventorySchema,durability:durabilitySchema}).strict();
 export type WorldDrop=z.infer<typeof dropSchema>;
 export const snapshotSchema = z.object({
   version: z.literal(1), seed: z.number().int().min(0).max(2147483647),
-  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(13)])).max(30000)
+  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(19)])).max(30000)
     .refine(entries => new Set(entries.map(([key]) => key)).size === entries.length, '方块坐标重复'),
   gameMode: gameModeSchema.default('creative'),
+  hunger:finite.min(0).max(20).default(20),
+  durability:durabilitySchema,
+  deadCreatures:z.array(z.string().max(80)).max(10000).default([]),
   health: finite.min(0).max(20).default(20),
   keepInventory: z.boolean().default(false),
   inventory: inventorySchema.default({}),
-  drops: z.array(dropSchema).max(64).default([]).refine(v=>new Set(v.map(d=>d.id)).size===v.length,'掉落物标识重复'),
+  drops: z.array(dropSchema).max(256).default([]).refine(v=>new Set(v.map(d=>d.id)).size===v.length,'掉落物标识重复'),
   weather: z.enum(['auto','clear','rain','snow','thunder','cloudy']).default('auto'),
   generatorVersion: z.union([z.literal(1),z.literal(2)]).default(1),
   timeSeconds: finite.min(0).max(1e12).optional(),
   creatures: z.array(creatureSchema).max(256).default([]).refine(v=>new Set(v.map(c=>c.id)).size===v.length,'生物标识重复'),
   position: positionSchema.optional(), yaw: finite.default(-1.05),
   pitch: finite.min(-1.5).max(1.5).default(-.22),
-  selected: z.number().int().min(1).max(13).default(1), night: z.boolean().default(false),
+  selected: z.number().int().refine(validItem).default(1), night: z.boolean().default(false),
 }).strict();
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export function snapshotFingerprint(snapshot: Snapshot): string {
@@ -42,6 +47,8 @@ export function snapshotFingerprint(snapshot: Snapshot): string {
   const round = (value: number) => Math.round(value * 1e6) / 1e6;
   const canonical = snapshotSchema.parse(snapshot);
   if (canonical.position) canonical.position = { x: round(canonical.position.x), y: round(canonical.position.y), z: round(canonical.position.z) };
+  canonical.hunger=round(canonical.hunger);
+  canonical.deadCreatures.sort();
   canonical.yaw = round(canonical.yaw); canonical.pitch = round(canonical.pitch);
   if(canonical.timeSeconds!==undefined)canonical.timeSeconds=round(canonical.timeSeconds);
   canonical.drops=canonical.drops.map(d=>({...d,position:{x:round(d.position.x),y:round(d.position.y),z:round(d.position.z)}})).sort((a,b)=>a.id.localeCompare(b.id));

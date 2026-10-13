@@ -1,3 +1,4 @@
+import { ores } from '../../shared/items';
 export const blockTypes = [
   { id: 1, name: '草方块', color: '#679348', side: '#826245', description: '铺设草坪、花园和自然地表。' },
   { id: 2, name: '泥土', color: '#92704f', description: '填平地面，塑造山坡与地基。' },
@@ -12,6 +13,7 @@ export const blockTypes = [
   { id: 11, name: '沼泽土', color: '#536044', description: '湿地的深色土壤。' },
   { id: 12, name: '暮色苔', color: '#55435f', description: '暮色森林的紫色地表。' },
   { id: 13, name: '暮色树叶', color: '#705d8e', description: '幽暗森林中的高大树冠。' },
+  ...ores.map(o=>({id:o.id,name:o.name,color:'#828b8f',side:o.color,description:'地下矿脉 · 挖掘获得'+o.resourceName})),
 ];
 export type Settings = { sensitivity: number; touchSensitivity: number; fov: number; volume: number; quality: 'low' | 'medium' | 'high'; shadows: boolean };
 export const defaults: Settings = { sensitivity: 1, touchSensitivity: 1, fov: 68, volume: 60, quality: 'high', shadows: true };

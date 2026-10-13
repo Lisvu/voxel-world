@@ -16,7 +16,7 @@ test('service creates v2 modes, round trips JSON state, and preserves legacy gen
  const service=new WorldsService({...tx,$transaction:async f=>f(tx)});
  const created=await service.create('owner',{name:'New',seed:42,gameMode:'survival',keepInventory:true});
  assert.equal(created.snapshot.generatorVersion,2);assert.equal(created.snapshot.gameMode,'survival');assert.equal(created.snapshot.timeSeconds,200);
- const snapshot={...created.snapshot,timeSeconds:725,health:12,inventory:{'7':24},weather:'snow',changes:[['1000,24,-1000',8]],creatures:[{id:'yak',species:'yak',x:1000,y:24,z:-1000,yaw:1}],drops:[{id:'drop',position:{x:999,y:24,z:-1000},items:{'1':4}}]};
+ const snapshot={...created.snapshot,timeSeconds:725,health:12,inventory:{'7':24},weather:'snow',changes:[['1000,24,-1000',8]],creatures:[{id:'yak',species:'yak',x:1000,y:24,z:-1000,yaw:1}],drops:[{id:'drop',position:{x:999,y:24,z:-1000},items:{'1':4},durability:{}}]};
  await service.save('owner','w',{revision:0,snapshot});const restored=await service.detail('owner','w');assert.deepEqual(restored.snapshot,snapshot);
  await assert.rejects(()=>service.save('owner','w',{revision:0,snapshot}),/其他页面/);
  const legacy=await service.create('owner',{name:'Old',snapshot:{version:1,seed:42,changes:[]}});assert.equal(legacy.generatorVersion,1);

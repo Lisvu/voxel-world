@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { VoxelWorld, biomes, WORLD_LIMIT } from '../src/game/world.ts';
 import { advanceTime, clockState } from '../src/game/clock.ts';
-import { snapshotSchema, snapshotFingerprint } from '../shared/contracts.ts';
+import { snapshotSchema, snapshotFingerprint } from '../dist-server/shared/contracts.js';
 test('600 real seconds advances exactly one 24-hour day; pause freezes time',()=>{
   const t=advanceTime(150,600);assert.equal(t,750);assert.equal(clockState(t).hour,6);assert.equal(clockState(t).day,2);assert.equal(advanceTime(t,600,false),t);
   assert.equal(clockState(150).night,false);assert.equal(clockState(450).night,true);

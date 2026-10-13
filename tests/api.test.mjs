@@ -55,7 +55,7 @@ await test('PostgreSQL-backed API', async t => {
       assert.equal((await request(`/worlds/${world.id}`, { method: 'DELETE', cookie: cookieB })).status, 404);
       assert.equal((await request(`/worlds/${world.id}`, { method: 'PATCH', cookie: cookieB, body: { name: 'stolen' } })).status, 404);
     });
-    const snapshot = () => ({ ...world.snapshot, changes: [['0,5,0', 7], ['-17,4,17', 0]], position: { x: 2000, y: 24, z: -2000 }, timeSeconds:725, creatures:[{id:'persisted-yak',species:'yak',x:2002,y:22,z:-2000,yaw:1}] });
+    const snapshot = () => ({ ...world.snapshot, changes: [['0,5,0', 7], ['-17,4,17', 0]], position: { x: 2000, y: 24, z: -2000 }, timeSeconds:725,hunger:9.5,durability:{125:87},inventory:{125:1,34:4,205:2},selected:125,deadCreatures:['wild:9:9'],drops:[{id:'d',position:{x:2001,y:24,z:-2000},items:{126:1},durability:{126:21}}], creatures:[{id:'persisted-yak',species:'yak',x:2002,y:22,z:-2000,yaw:1}] });
     await t.test('validate coordinates, duplicate blocks, bedrock and seed', async () => {
       for (const changes of [[['32769,3,0', 2]], [['0,0,0', 0]], [['0,4,0', 1], ['0,4,0', 2]]]) {
         assert.equal((await request(`/worlds/${world.id}/save`, { method: 'PUT', cookie: cookieA, body: { revision: 0, snapshot: { ...snapshot(), changes } } })).status, 400);
@@ -72,6 +72,7 @@ await test('PostgreSQL-backed API', async t => {
       assert.deepEqual(restored.data.snapshot.changes.sort(), snapshot().changes.sort());
       assert.deepEqual(restored.data.snapshot.position, snapshot().position);
       assert.equal(restored.data.snapshot.timeSeconds,725);
+      for(const field of ['hunger','durability','inventory','selected','deadCreatures','drops'])assert.deepEqual(restored.data.snapshot[field],snapshot()[field]);
       assert.deepEqual(restored.data.snapshot.creatures,snapshot().creatures);
     });
     await t.test('stale and concurrent writes cannot overwrite each other', async () => {

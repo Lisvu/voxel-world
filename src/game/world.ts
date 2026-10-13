@@ -48,7 +48,11 @@ export class VoxelWorld {
       let top=legacy?(h<=3?6:1):b==='snow'?8:b==='volcano'?9:b==='swamp'?11:h<=SEA?6:b==='twilight'?12:1;
       if(!legacy&&b==='volcano'&&Math.hypot(x-Math.round(x/192)*192,z-Math.round(z/192)*192)<9)top=10;
       if(this.village(x,z)&&!legacy&&(Math.abs((x-38)%192)<3||Math.abs((z-38)%192)<3))top=3;
-      for(let y=0;y<=h;y++)set(x,y,z,y===h?top:y<h-2?3:2);
+      for(let y=0;y<=h;y++){
+        let t=y===h?top:y<h-2?3:2;
+        if(t===3&&y>0&&y<h-3&&!legacy){const r=hash(this.seed,Math.floor(x/2),Math.floor(z/2),700+Math.floor(y/2));if(r<.035)t=14;else if(r<.060)t=15;else if(r<.082)t=16;else if(r<.094&&y<18)t=17;else if(r<.104&&y<12)t=18;else if(r<.110&&y<16)t=19;}
+        set(x,y,z,t);
+      }
     }
     // Generate trees from an expanded anchor area so neighboring chunks agree.
     for(let x=cx*16-3;x<cx*16+19;x++)for(let z=cz*16-3;z<cz*16+19;z++){
