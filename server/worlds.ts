@@ -25,18 +25,18 @@ function playerState(snapshot: Snapshot): Prisma.InputJsonObject {
 @Injectable()
 export class WorldsService {
   constructor(private readonly db: Database) {}
-  list(ownerId: string) { return this.db.world.findMany({ where: { ownerId }, select: summarySelect, orderBy: { updatedAt: 'desc' } }); }
+  async list(ownerId: string) { const worlds=await this.db.world.findMany({ where: { ownerId }, select: {...summarySelect,playerState:true}, orderBy: { updatedAt: 'desc' } });return worlds.map(({playerState,...world})=>({...world,gameMode:(playerState as Record<string,unknown>).gameMode==='survival'?'survival':'creative'})); }
   async detail(ownerId: string, id: string) {
     const world = await this.db.world.findFirst({ where: { id, ownerId }, select: { ...summarySelect, playerState: true, chunks: true } });
     if (!world) throw new NotFoundException('世界不存在');
     const { chunks: savedChunks, playerState: player, ...summary } = world;
-    return { ...summary, snapshot: snapshotSchema.parse({ ...(player as object), version: 1, seed: world.seed, changes: savedChunks.flatMap(chunk => chunk.edits as Snapshot['changes']) }) };
+    return { ...summary, snapshot: snapshotSchema.parse({ ...(player as object), version: 1, generatorVersion: world.generatorVersion, seed: world.seed, changes: savedChunks.flatMap(chunk => chunk.edits as Snapshot['changes']) }) };
   }
   async create(ownerId: string, input: unknown) {
     const data = parse(createWorldSchema, input);
-    const snapshot = data.snapshot ?? snapshotSchema.parse({ version: 1, seed: data.seed ?? randomInt(2147483647), changes: [] });
+    const snapshot = data.snapshot ?? snapshotSchema.parse({ version: 1, generatorVersion: GENERATOR_VERSION, timeSeconds:200, gameMode:data.gameMode ?? 'creative', keepInventory:data.keepInventory ?? false, seed: data.seed ?? randomInt(2147483647), changes: [] });
     const result = await this.db.world.create({ data: {
-      name: data.name, seed: snapshot.seed, ownerId, generatorVersion: GENERATOR_VERSION,
+      name: data.name, seed: snapshot.seed, ownerId, generatorVersion: snapshot.generatorVersion,
       playerState: playerState(snapshot), blockCount: snapshot.changes.length,
       chunks: { create: chunks(snapshot) },
     }, select: summarySelect });
@@ -49,7 +49,7 @@ export class WorldsService {
     return this.db.$transaction(async tx => {
       const world = await tx.world.findFirst({ where: { id, ownerId }, select: { seed: true, generatorVersion: true } });
       if (!world) throw new NotFoundException('世界不存在');
-      if (snapshot.seed !== world.seed || world.generatorVersion !== GENERATOR_VERSION) throw new BadRequestException('世界种子或生成器版本不一致');
+      if (snapshot.seed !== world.seed || world.generatorVersion !== snapshot.generatorVersion) throw new BadRequestException('世界种子或生成器版本不一致');
       const result = await tx.world.updateMany({ where: { id, ownerId, revision }, data: {
         revision: { increment: 1 }, playerState: playerState(snapshot), blockCount: snapshot.changes.length,
       } });
@@ -83,3 +83,4 @@ export class WorldsController {
   @Patch(':id') rename(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) { return this.worlds.rename(req.user.id, id, body); }
   @Delete(':id') remove(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.worlds.remove(req.user.id, id); }
 }
+

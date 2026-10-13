@@ -55,9 +55,9 @@ await test('PostgreSQL-backed API', async t => {
       assert.equal((await request(`/worlds/${world.id}`, { method: 'DELETE', cookie: cookieB })).status, 404);
       assert.equal((await request(`/worlds/${world.id}`, { method: 'PATCH', cookie: cookieB, body: { name: 'stolen' } })).status, 404);
     });
-    const snapshot = () => ({ ...world.snapshot, changes: [['0,5,0', 7], ['-17,4,17', 0]], position: { x: 0, y: 8, z: 12 } });
+    const snapshot = () => ({ ...world.snapshot, changes: [['0,5,0', 7], ['-17,4,17', 0]], position: { x: 2000, y: 24, z: -2000 }, timeSeconds:725, creatures:[{id:'persisted-yak',species:'yak',x:2002,y:22,z:-2000,yaw:1}] });
     await t.test('validate coordinates, duplicate blocks, bedrock and seed', async () => {
-      for (const changes of [[['90,3,0', 2]], [['0,0,0', 0]], [['0,4,0', 1], ['0,4,0', 2]]]) {
+      for (const changes of [[['32769,3,0', 2]], [['0,0,0', 0]], [['0,4,0', 1], ['0,4,0', 2]]]) {
         assert.equal((await request(`/worlds/${world.id}/save`, { method: 'PUT', cookie: cookieA, body: { revision: 0, snapshot: { ...snapshot(), changes } } })).status, 400);
       }
       assert.equal((await request(`/worlds/${world.id}/save`, { method: 'PUT', cookie: cookieA, body: { revision: 0, snapshot: { ...snapshot(), seed: 900 } } })).status, 400);
@@ -71,6 +71,8 @@ await test('PostgreSQL-backed API', async t => {
       const restored = await request(`/worlds/${world.id}`, { cookie: cookieA });
       assert.deepEqual(restored.data.snapshot.changes.sort(), snapshot().changes.sort());
       assert.deepEqual(restored.data.snapshot.position, snapshot().position);
+      assert.equal(restored.data.snapshot.timeSeconds,725);
+      assert.deepEqual(restored.data.snapshot.creatures,snapshot().creatures);
     });
     await t.test('stale and concurrent writes cannot overwrite each other', async () => {
       assert.equal((await request(`/worlds/${world.id}/save`, { method: 'PUT', cookie: cookieA, body: { revision: 0, snapshot: snapshot() } })).status, 409);
@@ -83,6 +85,12 @@ await test('PostgreSQL-backed API', async t => {
       assert.equal((await request(`/worlds/${world.id}`, { method: 'DELETE', cookie: cookieA })).status, 200);
       assert.equal(await db.worldChunk.count({ where: { worldId: world.id } }), 0);
       assert.equal((await request(`/worlds/${world.id}`, { cookie: cookieA })).status, 404);
+    });
+    await t.test('legacy imports keep generator identity and remain writable', async () => {
+      const legacy = await request('/worlds', { method:'POST', cookie:cookieA, body:{name:'Legacy import',snapshot:{version:1,seed:42,changes:[],night:true}} });
+      assert.equal(legacy.status,201);assert.equal(legacy.data.generatorVersion,1);
+      assert.equal((await request(`/worlds/${legacy.data.id}/save`,{method:'PUT',cookie:cookieA,body:{revision:0,snapshot:{...legacy.data.snapshot,timeSeconds:450}}})).status,200);
+      assert.equal((await request(`/worlds/${legacy.data.id}/save`,{method:'PUT',cookie:cookieA,body:{revision:1,snapshot:{...legacy.data.snapshot,generatorVersion:2}}})).status,400);
     });
     await t.test('logout invalidates session and login restores account access', async () => {
       await request('/auth/logout', { method: 'POST', cookie: cookieA });
@@ -98,3 +106,4 @@ await test('PostgreSQL-backed API', async t => {
     await db.$disconnect();
   }
 });
+

@@ -1,22 +1,39 @@
 import { z } from 'zod';
 
-export const WORLD_SIZE = 28;
-export const GENERATOR_VERSION = 1;
+export const WORLD_SIZE = 32768;
+export const GENERATOR_VERSION = 2;
 const finite = z.number().finite();
 export const positionSchema = z.object({
-  x: finite.min(-40).max(40), y: finite.min(-10).max(40), z: finite.min(-40).max(40),
+  x: finite.min(-32768).max(32768), y: finite.min(-10).max(100), z: finite.min(-32768).max(32768),
 }).strict();
 const blockKey = z.string().regex(/^-?\d+,[1-9]\d*,-?\d+$/).refine(value => {
   const [x, y, z] = value.split(',').map(Number);
-  return Math.abs(x) <= WORLD_SIZE && Math.abs(z) <= WORLD_SIZE && y <= 32 && `${x},${y},${z}` === value;
+  return Math.abs(x) <= WORLD_SIZE && Math.abs(z) <= WORLD_SIZE && y < 96 && `${x},${y},${z}` === value;
 }, '方块坐标超出范围');
+export const speciesSchema = z.enum(['cow','sheep','chicken','fish','yak']);
+export type Species = z.infer<typeof speciesSchema>;
+export const creatureSchema = z.object({ id:z.string().max(80), species:speciesSchema, x:finite.min(-32768).max(32768), y:finite.min(0).max(100), z:finite.min(-32768).max(32768), yaw:finite }).strict();
+export type CreatureSave = z.infer<typeof creatureSchema>;
+export const gameModeSchema=z.enum(['survival','creative']);
+export const inventorySchema=z.record(z.string().regex(/^(?:[1-9]|1[0-3])$/),z.number().int().min(0).max(9999));
+export const dropSchema=z.object({id:z.string().max(80),position:positionSchema,items:inventorySchema}).strict();
+export type WorldDrop=z.infer<typeof dropSchema>;
 export const snapshotSchema = z.object({
   version: z.literal(1), seed: z.number().int().min(0).max(2147483647),
-  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(7)])).max(30000)
+  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(13)])).max(30000)
     .refine(entries => new Set(entries.map(([key]) => key)).size === entries.length, '方块坐标重复'),
+  gameMode: gameModeSchema.default('creative'),
+  health: finite.min(0).max(20).default(20),
+  keepInventory: z.boolean().default(false),
+  inventory: inventorySchema.default({}),
+  drops: z.array(dropSchema).max(64).default([]).refine(v=>new Set(v.map(d=>d.id)).size===v.length,'掉落物标识重复'),
+  weather: z.enum(['auto','clear','rain','snow','thunder','cloudy']).default('auto'),
+  generatorVersion: z.union([z.literal(1),z.literal(2)]).default(1),
+  timeSeconds: finite.min(0).max(1e12).optional(),
+  creatures: z.array(creatureSchema).max(256).default([]).refine(v=>new Set(v.map(c=>c.id)).size===v.length,'生物标识重复'),
   position: positionSchema.optional(), yaw: finite.default(-1.05),
   pitch: finite.min(-1.5).max(1.5).default(-.22),
-  selected: z.number().int().min(1).max(7).default(1), night: z.boolean().default(false),
+  selected: z.number().int().min(1).max(13).default(1), night: z.boolean().default(false),
 }).strict();
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export function snapshotFingerprint(snapshot: Snapshot): string {
@@ -26,6 +43,9 @@ export function snapshotFingerprint(snapshot: Snapshot): string {
   const canonical = snapshotSchema.parse(snapshot);
   if (canonical.position) canonical.position = { x: round(canonical.position.x), y: round(canonical.position.y), z: round(canonical.position.z) };
   canonical.yaw = round(canonical.yaw); canonical.pitch = round(canonical.pitch);
+  if(canonical.timeSeconds!==undefined)canonical.timeSeconds=round(canonical.timeSeconds);
+  canonical.drops=canonical.drops.map(d=>({...d,position:{x:round(d.position.x),y:round(d.position.y),z:round(d.position.z)}})).sort((a,b)=>a.id.localeCompare(b.id));
+  canonical.creatures=canonical.creatures.map(c=>({...c,x:round(c.x),y:round(c.y),z:round(c.z),yaw:round(c.yaw)})).sort((a,b)=>a.id.localeCompare(b.id));
   canonical.changes.sort(([a], [b]) => a.localeCompare(b));
   return JSON.stringify(canonical);
 }
@@ -39,11 +59,15 @@ export const createWorldSchema = z.object({
   name: worldNameSchema,
   seed: z.number().int().min(0).max(2147483647).optional(),
   snapshot: snapshotSchema.optional(),
+  gameMode: gameModeSchema.optional(),
+  keepInventory: z.boolean().optional(),
 }).strict().refine(data => !data.snapshot || data.seed === undefined || data.seed === data.snapshot.seed, '种子与存档不一致');
 export const saveSchema = z.object({ revision: z.number().int().min(0), snapshot: snapshotSchema }).strict();
 export interface User { id: string; email: string; name: string }
 export interface WorldSummary {
+  gameMode?: 'survival'|'creative';
   id: string; name: string; seed: number; generatorVersion: number; revision: number;
   createdAt: string; updatedAt: string; blockCount: number;
 }
 export interface WorldDetail extends WorldSummary { snapshot: Snapshot }
+

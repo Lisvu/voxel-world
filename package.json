@@ -18,7 +18,11 @@
     "test:api": "node --test tests/api.test.mjs",
     "test:e2e": "node tests/browser.mjs",
     "test:frontend": "node --test tests/frontend.test.mjs",
-    "test:frontend:browser": "node tests/frontend-browser.mjs"
+    "test:frontend:browser": "node tests/frontend-browser.mjs",
+    "test:world": "node --experimental-transform-types --test tests/world.test.mjs",
+    "test:world:service": "npm run build:server && node --test tests/world-service.test.mjs",
+    "test:world:browser": "node --experimental-transform-types tests/world-browser.mjs",
+    "test:modes:browser": "node tests/modes-browser.mjs"
   },
   "dependencies": {
     "three": "^0.180.0", "@dimforge/rapier3d-compat": "^0.19.0", "lucide": "^0.468.0",

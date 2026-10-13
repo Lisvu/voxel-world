@@ -12,11 +12,11 @@ test('corrupt and out-of-range local settings are safe', () => {
 test('placement respects world bounds, body, occupancy and change budget', () => {
   const player = { x:0, y:5, z:0 };
   assert.equal(placementError(2,5,0,player,false,false),'');
-  assert.match(placementError(29,5,0,player,false,false), /边界/);
+  assert.match(placementError(32769,5,0,player,false,false), /边界/);
   assert.match(placementError(2,0,0,player,false,false), /边界/);
-  assert.match(placementError(2,33,0,player,false,false), /边界/);
+  assert.match(placementError(2,96,0,player,false,false), /边界/);
   assert.match(placementError(0,5,0,player,false,false), /身体/);
   assert.match(placementError(2,5,0,player,true,false), /已有/);
   assert.match(placementError(2,5,0,player,false,true), /上限/);
-  assert.equal(placementError(-28,32,28,player,false,false),'');
+  assert.equal(placementError(-32768,95,32768,player,false,false),'');
 });
