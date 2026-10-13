@@ -308,21 +308,39 @@ function updateDay(){
   if(clockLabel!==state.label){clockLabel=state.label;$('world-clock').textContent=state.label;$('day-toggle').title='跳至'+(night?'清晨':'夜晚');$('day-toggle').setAttribute('aria-label',$('day-toggle').title);}
 }
 function toggleDay(){const state=clockState(timeSeconds);timeSeconds=Math.floor(timeSeconds/600)*600+(state.night?150:450);updateDay();scheduleSave();}
-function enter(){
-  if(!ready||dead)return;
-  $<HTMLDialogElement>('menu').close();document.body.classList.remove('paused');
-  if(touch){last=performance.now();active=true;started=true;document.body.classList.add('playing');}
-  else {$('world').requestPointerLock()?.catch(()=>toast('点击游戏画面继续'));}
+let dragControls=false, entering=false;
+function activate(){
+  if(disposed||dead)return;
+  last=performance.now();active=true;started=true;
+  $('world').focus({preventScroll:true});
+  document.body.classList.add('playing');document.body.classList.remove('paused');
 }
+function useDragControls(){
+  if(!entering||disposed)return;
+  entering=false;dragControls=true;activate();
+  $('control-hint').hidden=false;
+  toast('已进入世界：按住鼠标拖动转向，WASD 移动');
+}
+function enter(){
+  if(!ready||dead||entering)return;
+  $<HTMLDialogElement>('menu').close();document.body.classList.remove('paused');
+  if(touch||dragControls){activate();return;}
+  entering=true;
+  try {
+    if(typeof $('world').requestPointerLock!=='function'){useDragControls();return;}
+    $('world').requestPointerLock()?.catch(useDragControls);
+  } catch {useDragControls();}
+}
+listen(document,'pointerlockerror',useDragControls);
 function pause(){
-  if(!started)return;active=false;keys.clear();joystick.x=joystick.y=0;$('stick').style.transform='';
+  entering=false;lookPointer=null;if(!started)return;active=false;keys.clear();joystick.x=joystick.y=0;$('stick').style.transform='';
   document.exitPointerLock?.();document.body.classList.add('paused');if(!$<HTMLDialogElement>('menu').open)$<HTMLDialogElement>('menu').showModal();void saveWorld();
 }
 listen(document,'pointerlockchange',()=>{
-  if(document.pointerLockElement===$('world')){last=performance.now();active=true;started=true;document.body.classList.add('playing');document.body.classList.remove('paused');}
+  if(document.pointerLockElement===$('world')){entering=false;dragControls=false;$('control-hint').hidden=true;activate();}
   else if(started&&!document.querySelector('dialog[open]'))pause();
 });
-listen(document,'mousemove',e=>{if(!active||touch)return;yaw-=e.movementX*.0023*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023*settings.sensitivity,-1.5,1.5);});
+listen(document,'mousemove',e=>{if(!active||touch||document.pointerLockElement!==$('world'))return;yaw-=e.movementX*.0023*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023*settings.sensitivity,-1.5,1.5);});
 listen(document,'keydown',e=>{
   if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open]'))return;
   if(e.code==='Escape'&&active){e.preventDefault();pause();return;}
@@ -339,7 +357,7 @@ listen(document,'keyup',e=>keys.delete(e.code));
 listen(window,'blur',()=>{keys.clear();if(active)pause();});
 listen(document,'visibilitychange',()=>{if(document.hidden&&active)pause();});
 listen($('world'),'contextmenu',e=>e.preventDefault());
-listen($('world'),'mousedown',e=>{if(touch)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
+listen($('world'),'mousedown',e=>{if(touch||dragControls)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
 listen($('world'),'wheel',e=>{if(!active)return;e.preventDefault();select((selected-1+(e.deltaY>0?1:6))%7+1);},{passive:false});
 $('play').onclick=enter;$('resume').onclick=enter;$('close-menu').onclick=enter;$('pause').onclick=pause;
 listen($('menu'),'cancel',e=>{e.preventDefault();enter();});
@@ -349,10 +367,26 @@ $('day-toggle').onclick=()=>toggleDay();
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{toast('此浏览器不支持全屏');}};
 $('pick-material').onclick=pickMaterial;
 $('break').onclick=()=>edit(false);$('place').onclick=()=>edit(true);$('jump').onpointerdown=e=>{e.preventDefault();if(active)verticalVelocity=grounded?7.7:body.translation().y<worldData.waterLevel(Math.round(body.translation().x),Math.round(body.translation().z))?3:verticalVelocity;};
-let lookPointer: { id: number; x: number; y: number } | null;
-listen($('world'),'pointerdown',e=>{if(!touch||!active)return;lookPointer={id:e.pointerId,x:e.clientX,y:e.clientY};$('world').setPointerCapture(e.pointerId);});
-listen($('world'),'pointermove',e=>{if(!lookPointer||e.pointerId!==lookPointer.id)return;yaw-=(e.clientX-lookPointer.x)*.005*settings.touchSensitivity;pitch=THREE.MathUtils.clamp(pitch-(e.clientY-lookPointer.y)*.005*settings.touchSensitivity,-1.5,1.5);lookPointer.x=e.clientX;lookPointer.y=e.clientY;});
-const endLook=()=>{lookPointer=null;};listen($('world'),'pointerup',endLook);listen($('world'),'pointercancel',endLook);
+let lookPointer: { id:number; x:number; y:number; startX:number; startY:number; button:number; moved:boolean } | null;
+listen($('world'),'pointerdown',e=>{
+  if((!touch&&!dragControls)||!active)return;
+  lookPointer={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,button:e.button,moved:false};
+  $('world').setPointerCapture(e.pointerId);
+});
+listen($('world'),'pointermove',e=>{
+  if(!active||!lookPointer||e.pointerId!==lookPointer.id)return;
+  if(Math.hypot(e.clientX-lookPointer.startX,e.clientY-lookPointer.startY)>5)lookPointer.moved=true;
+  const sensitivity=touch ? .005*settings.touchSensitivity : .0023*settings.sensitivity;
+  yaw-=(e.clientX-lookPointer.x)*sensitivity;pitch=THREE.MathUtils.clamp(pitch-(e.clientY-lookPointer.y)*sensitivity,-1.5,1.5);
+  lookPointer.x=e.clientX;lookPointer.y=e.clientY;
+});
+listen($('world'),'pointerup',e=>{
+  if(!lookPointer||e.pointerId!==lookPointer.id)return;
+  const pointer=lookPointer;lookPointer=null;
+  if(active&&dragControls&&!pointer.moved){if(pointer.button===0)edit(false);if(pointer.button===2)edit(true);if(pointer.button===1)pickMaterial();}
+});
+listen($('world'),'pointercancel',()=>{lookPointer=null;});
+listen($('world'),'lostpointercapture',()=>{lookPointer=null;});
 let stickPointer: number | null;
 function moveStick(e: PointerEvent){const r=$('joystick').getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/35,y=(e.clientY-r.top-r.height/2)/35;const len=Math.hypot(x,y);if(len>1){x/=len;y/=len;}joystick.x=x;joystick.y=y;$('stick').style.transform=`translate(${x*29}px,${y*29}px)`;}
 $('joystick').onpointerdown=e=>{stickPointer=e.pointerId;$('joystick').setPointerCapture(e.pointerId);moveStick(e);};
