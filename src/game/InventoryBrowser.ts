@@ -1,8 +1,9 @@
+import { armorItems } from '../../shared/armor';
 import { foods, tools } from '../../shared/items';
 import './inventory-browser.css';
 
 type Recipe = { id: number; name: string; recipe: Record<string, number> };
-type Category = 'all' | 'blocks' | 'tools' | 'food' | 'resources' | 'recipes' | 'eggs';
+type Category = 'armor' | 'all' | 'blocks' | 'tools' | 'food' | 'resources' | 'recipes' | 'eggs';
 type Options = {
   root?: HTMLElement;
   inventory: () => Record<string, number>;
@@ -16,7 +17,7 @@ export function createInventoryBrowser(options: Options) {
   const root = options.root ?? document.getElementById('materials-panel')!;
   const categories: [Category, string][] = [
     ['all', '全部'], ['blocks', '方块'], ['tools', '工具'], ['food', '食物'],
-    ['resources', '资源'], ['recipes', '合成'], ['eggs', '生物蛋'],
+    ['resources', '资源'], ['armor','装备'], ['recipes', '合成'], ['eggs', '生物蛋'],
   ];
   const sections = ['material-grid', 'equipment-grid', 'craft-grid', 'creature-grid'].map(id => {
     const grid = root.querySelector<HTMLElement>(`#${id}`)!;
@@ -61,14 +62,15 @@ export function createInventoryBrowser(options: Options) {
   let category: Category = 'all';
   let disposed = false;
   const recipeMap = new Map(options.recipes.map(recipe => [recipe.id, recipe]));
-  const toolIds = new Set(tools.map(item => item.id));
+  const toolIds = new Set([...tools,...armorItems].map(item => item.id));
+  const armorIds = new Set(armorItems.map(item=>item.id));
   const foodIds = new Set(foods.filter(item => item.hunger > 0).map(item => item.id));
   const cards = sections.flatMap(({ grid }) => Array.from(grid.querySelectorAll<HTMLButtonElement>('.material-card')).map(card => {
     const id = Number(card.dataset.recipe ?? card.dataset.type ?? card.dataset.item);
     const kind: Category = card.dataset.recipe !== undefined ? 'recipes'
       : card.dataset.species !== undefined ? 'eggs'
       : card.dataset.type !== undefined ? 'blocks'
-      : toolIds.has(id) ? 'tools' : foodIds.has(id) ? 'food' : 'resources';
+      : armorIds.has(id) ? 'armor' : toolIds.has(id) ? 'tools' : foodIds.has(id) ? 'food' : 'resources';
     const name = card.querySelector('strong')?.textContent ?? options.name(id);
     const details = kind === 'recipes' ? document.createElement('div') : null;
     if (details) {
@@ -112,7 +114,7 @@ export function createInventoryBrowser(options: Options) {
         }
         const status = document.createElement('small');
         status.className = 'recipe-status';
-        status.textContent = !capacity ? toolIds.has(id) ? '已拥有此工具' : '此物品已达上限'
+        status.textContent = !capacity ? toolIds.has(id) ? '已拥有此工具或装备' : '此物品已达上限'
           : creative ? '创造模式 · 免费合成' : enough ? '材料齐全 · 可合成' : '收集以上缺少的材料';
         details.append(status);
         card.dataset.craftable = String(canCraft);

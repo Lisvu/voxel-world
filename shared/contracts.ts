@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { validItem, tools } from './items.js';
+import { armorItems, armorSlots } from './armor.js';
+import { validItem, tools, MAX_BLOCK_ID } from './items.js';
 
 export const WORLD_SIZE = 32768;
 export const GENERATOR_VERSION = 2;
@@ -20,13 +21,16 @@ export const inventorySchema=z.record(z.string().refine(v=>String(Number(v))===v
 export const durabilitySchema=z.record(z.string().refine(v=>tools.some(t=>String(t.id)===v)),z.number().int().min(1).max(1562)).default({});
 export const dropSchema=z.object({id:z.string().max(80),position:positionSchema,items:inventorySchema,durability:durabilitySchema}).strict();
 export type WorldDrop=z.infer<typeof dropSchema>;
+const armorSlotSchema=(slot:string)=>z.number().int().refine(id=>armorItems.some(a=>a.id===id&&a.slot===slot)).optional();
+export const equipmentSchema=z.object({helmet:armorSlotSchema('helmet'),chestplate:armorSlotSchema('chestplate'),leggings:armorSlotSchema('leggings'),boots:armorSlotSchema('boots')}).strict().default({});
 export const snapshotSchema = z.object({
   version: z.literal(1), seed: z.number().int().min(0).max(2147483647),
-  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(19)])).max(30000)
+  changes: z.array(z.tuple([blockKey, z.number().int().min(0).max(MAX_BLOCK_ID)])).max(30000)
     .refine(entries => new Set(entries.map(([key]) => key)).size === entries.length, '方块坐标重复'),
   gameMode: gameModeSchema.default('creative'),
   hunger:finite.min(0).max(20).default(20),
   durability:durabilitySchema,
+  equipment:equipmentSchema,
   deadCreatures:z.array(z.string().max(80)).max(10000).default([]),
   health: finite.min(0).max(20).default(20),
   keepInventory: z.boolean().default(false),
@@ -39,7 +43,7 @@ export const snapshotSchema = z.object({
   position: positionSchema.optional(), yaw: finite.default(-1.05),
   pitch: finite.min(-1.5).max(1.5).default(-.22),
   selected: z.number().int().refine(validItem).default(1), night: z.boolean().default(false),
-}).strict();
+}).strict().superRefine((snapshot,ctx)=>{for(const slot of armorSlots){const id=snapshot.equipment[slot];if(id!==undefined&&(snapshot.inventory[id]??0)<1)ctx.addIssue({code:'custom',path:['equipment',slot],message:'穿戴装备必须在背包中'});}});
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export function snapshotFingerprint(snapshot: Snapshot): string {
   // PostgreSQL/Prisma can round the last digits of JSON floating-point values.

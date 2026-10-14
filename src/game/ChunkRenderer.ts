@@ -14,12 +14,15 @@ export class ChunkRenderer {
   readonly material:THREE.MeshLambertMaterial;
   private readonly waterMaterial=new THREE.MeshPhongMaterial({color:0x418da5,transparent:true,opacity:.68,shininess:90,depthWrite:false,side:THREE.DoubleSide});
   private readonly atlas:THREE.CanvasTexture;
+  private readonly glow:THREE.CanvasTexture;
   private pending: [number,number][]=[];
   constructor(readonly world:VoxelWorld,readonly scene:THREE.Scene,materials:Map<number,THREE.MeshLambertMaterial[]>){
     const canvas=document.createElement('canvas');canvas.width=64;canvas.height=512;const ctx=canvas.getContext('2d')!;
     for(const [id,mats] of materials)for(let face=0;face<3;face++)ctx.drawImage(mats[face===0?0:face===1?2:3].map!.image as HTMLCanvasElement,face*16,(id-1)*16,16,16);
     this.atlas=new THREE.CanvasTexture(canvas);this.atlas.magFilter=THREE.NearestFilter;this.atlas.minFilter=THREE.NearestFilter;this.atlas.colorSpace=THREE.SRGBColorSpace;
-    this.material=new THREE.MeshLambertMaterial({map:this.atlas});
+    const glow=document.createElement('canvas');glow.width=64;glow.height=512;const glowContext=glow.getContext('2d')!;glowContext.fillStyle='#000';glowContext.fillRect(0,0,64,512);for(const id of [21,22])glowContext.drawImage(canvas,0,(id-1)*16,64,16,0,(id-1)*16,64,16);
+    this.glow=new THREE.CanvasTexture(glow);this.glow.magFilter=THREE.NearestFilter;this.glow.minFilter=THREE.NearestFilter;this.glow.colorSpace=THREE.SRGBColorSpace;
+    this.material=new THREE.MeshLambertMaterial({map:this.atlas,emissive:0xffffff,emissiveMap:this.glow,emissiveIntensity:.8});
   }
   get liquids(){return [...this.chunks.values()].map(c=>c.water);}
   get meshes(){return [...this.chunks.values()].map(c=>c.solid);}
@@ -43,10 +46,10 @@ export class ChunkRenderer {
       for(let y=0;y<HEIGHT;y++){
         const type=data[(x*16+z)*HEIGHT+y];if(!type)continue;
         for(let f=0;f<6;f++){
-          const {n,v}=faces[f];if(y===0&&n[1]===-1||this.world.get(wx+n[0],y+n[1],wz+n[2]))continue;
+          const {n,v}=faces[f],small=type===21||type===22,neighbor=this.world.get(wx+n[0],y+n[1],wz+n[2]);if(y===0&&n[1]===-1||!small&&neighbor&&neighbor!==21&&neighbor!==22)continue;
           const start=positions.length/3,tile=f===2?1:f===3?2:0;
           const u0=(tile*16+.1)/64,u1=(tile*16+15.9)/64,v0=1-((type-1)*16+15.9)/512,v1=1-((type-1)*16+.1)/512;
-          for(const a of v){positions.push(wx+a[0],y+a[1],wz+a[2]);normals.push(...n);}
+          for(const a of v){positions.push(wx+a[0]*(type===21?.22:type===22?.65:1),y+a[1]*(type===21?.8:type===22?.8:1)-(small?.1:0),wz+a[2]*(type===21?.22:type===22?.65:1));normals.push(...n);}
           uvs.push(u0,v0,u1,v0,u1,v1,u0,v1);indices.push(start,start+1,start+2,start,start+2,start+3);
         }
       }
@@ -56,5 +59,5 @@ export class ChunkRenderer {
     const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(water,3));wg.computeVertexNormals();
     const liquid=new THREE.Mesh(wg,this.waterMaterial);liquid.userData.water=true;this.scene.add(solid,liquid);this.chunks.set(id,{solid,water:liquid});
   }
-  dispose(){for(const c of this.chunks.values()){this.scene.remove(c.solid,c.water);c.solid.geometry.dispose();c.water.geometry.dispose();}this.chunks.clear();this.material.dispose();this.waterMaterial.dispose();this.atlas.dispose();}
+  dispose(){for(const c of this.chunks.values()){this.scene.remove(c.solid,c.water);c.solid.geometry.dispose();c.water.geometry.dispose();}this.chunks.clear();this.material.dispose();this.waterMaterial.dispose();this.atlas.dispose();this.glow.dispose();}
 }

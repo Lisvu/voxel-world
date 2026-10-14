@@ -26,7 +26,11 @@
     "test:survival": "npm run build:server && node --experimental-transform-types --test tests/survival.test.mjs",
     "test:survival:browser": "node tests/survival-browser.mjs",
     "test:inventory:browser": "node tests/inventory-browser.mjs",
-    "test:ux:browser": "node --experimental-transform-types tests/ux-browser.mjs"
+    "test:ux:browser": "node --experimental-transform-types tests/ux-browser.mjs",
+    "test:crafting": "node --experimental-transform-types --test tests/crafting.test.mjs",
+    "test:crafting:browser": "node tests/crafting-browser.mjs",
+    "test:equipment": "npm run build:server && node --experimental-transform-types --test tests/armor.test.mjs tests/equipment-contracts.test.mjs tests/lights.test.mjs",
+    "test:equipment:browser": "node tests/equipment-browser.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",

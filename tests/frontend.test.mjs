@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import { readFile } from 'node:fs/promises';
 let source = await readFile(new URL('../src/game/features.ts', import.meta.url), 'utf8');
+const armor=ts.transpileModule(await readFile(new URL('../shared/armor.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
 const items=ts.transpileModule(await readFile(new URL('../shared/items.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
-source=source.replace('../../shared/items',`data:text/javascript;base64,${Buffer.from(items).toString('base64')}`);
+source=source.replace('../../shared/items',`data:text/javascript;base64,${Buffer.from(items.replace('./armor.js',`data:text/javascript;base64,${Buffer.from(armor).toString('base64')}`)).toString('base64')}`);
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { normalizeSettings, defaults, placementError } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 test('corrupt and out-of-range local settings are safe', () => {
