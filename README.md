@@ -108,7 +108,7 @@ API 测试会验证 PostgreSQL 数据、密码哈希、权限隔离、输入校�
 
 - Click 进入世界 to capture the mouse.
 - WASD or arrow keys: move. Mouse: look. Space: jump. Shift: sprint.
-- Left click: mine. Right click: place. Number keys 1-7 or mouse wheel: material.
+- Left click: mine. Right click: place. Number keys 1-9 or mouse wheel: material.
 - Esc: pause, save, return to spawn, or create a new world.
 - Mobile: left joystick moves; drag the scene to look; pickaxe, plus, and arrow
   buttons mine, place, and jump.
@@ -173,3 +173,12 @@ TEST_WEB_URL=http://localhost:5173 npm run test:modes:browser
 ## 本地网页无法访问
 
 `http://localhost:5173/` 需要当前电脑上的开发服务运行。先确认数据库和 `npm run dev` 均已启动，并保持启动终端运行；重启电脑后需重新启动。账号和存档还需要后端与数据库，不要仅运行 `dev:web`。确认终端输出的实际端口，通过 `/api/health` 检查后端。若出现 `Cannot find package express`，更新代码后重新执行 `npm ci`。
+
+## 背包与探索界面更新
+
+- 背包提供方块、工具、食物、资源、合成、生物蛋分类，以及名称搜索、仅已拥有和仅可合成筛选。配方直接显示材料持有量、需求量和缺口。
+- 九格快捷栏可绑定工具、食物和材料；背包中选中物品，再选择格位并点击放入快捷栏。数字 1–9 切换，工具显示耐久条。配置按账号和世界保存在当前浏览器，不随云端存档同步。
+- 生存模式潜水显示十格氧气和低氧警告，沿用八秒后开始缺氧受伤的规则。
+- H 或顶部帮助按钮打开操作说明，阅读时暂停游戏；包含触控板与采集合成指引。
+
+验证：`npm run test:inventory:browser`、`npm run test:ux:browser`、`npm run test:frontend:browser`。需开发服务和本机 Chrome。对标依据与实现边界见 [前端体验对标记录](docs/frontend-benchmark-2026-10-14.md)。

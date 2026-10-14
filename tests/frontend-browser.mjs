@@ -27,7 +27,7 @@ try {
     await page.locator('.world-sort select').selectOption('blocks');assert.equal(await page.locator('.world-card h2').first().textContent(),'沙岸小屋');
     await page.screenshot({path:`screenshots/lobby-${mobile?'mobile':'desktop'}.png`});
     await page.getByRole('button',{name:'进入 青木河谷'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);
-    assert.equal(await page.locator('.slot').count(),7);assert.equal(await page.locator('#material-grid .material-card').count(),19);
+    assert.equal(await page.locator('.slot').count(),9);assert.equal(await page.locator('#material-grid .material-card').count(),19);
     await page.locator('#open-settings').click();await page.locator('#setting-volume').fill('0');await page.locator('#setting-fov').fill('90');await page.locator('#setting-quality').selectOption('low');await page.locator('#setting-shadows').uncheck();
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('voxel-settings-v1')).fov),90);
     await page.screenshot({path:`screenshots/settings-${mobile?'mobile':'desktop'}.png`});
@@ -52,7 +52,7 @@ try {
     await page.waitForFunction(()=>window.__voxel?.getState().ready || document.querySelector('.app-modal'));
     if(await page.getByRole('button',{name:'继续云端版本'}).isVisible())await page.getByRole('button',{name:'继续云端版本'}).click();
     await page.waitForFunction(()=>window.__voxel?.getState().ready);
-    assert.equal(await page.locator('.slot').count(),7);await page.locator('#open-settings').click();assert.equal(await page.locator('#setting-fov').inputValue(),'90');
+    assert.equal(await page.locator('.slot').count(),9);await page.locator('#open-settings').click();assert.equal(await page.locator('#setting-fov').inputValue(),'90');
     assert.deepEqual(errors,[]);await context.close();console.log(`${mobile?'Mobile':'Desktop'} frontend checks passed`);
   }
 }finally{await browser.close();}

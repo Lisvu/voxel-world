@@ -1,3 +1,5 @@
+import { createQuickbar } from './Quickbar';
+import { createInventoryBrowser } from './InventoryBrowser';
 import { tools as toolItems, foods, ores, itemName, miningSeconds, craft, validItem } from '../../shared/items';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -14,7 +16,7 @@ import type { Species } from '../../shared/contracts';
 import type { Snapshot } from '../../shared/contracts';
 
 let rapierReady: Promise<void> | undefined;
-export async function startGame(initial: Snapshot, persist: (snapshot: Snapshot) => Promise<void>, leave: () => void, signal: AbortSignal) {
+export async function startGame(initial: Snapshot, persist: (snapshot: Snapshot) => Promise<void>, leave: () => void, signal: AbortSignal, preferenceScope = `seed:${initial.seed}`) {
 await (rapierReady ??= RAPIER.init());
 if (signal.aborted) throw new DOMException('Game closed', 'AbortError');
 const events = new AbortController();
@@ -90,20 +92,20 @@ function texture(type: typeof types[number], face='side') {
   const tex=new THREE.CanvasTexture(canvas);tex.magFilter=THREE.NearestFilter;tex.minFilter=THREE.NearestMipmapLinearFilter;tex.colorSpace=THREE.SRGBColorSpace;
   return { tex, url:canvas.toDataURL() };
 }
+let inventoryBrowser: ReturnType<typeof createInventoryBrowser> | undefined;
+const blockImages=new Map<number,string>();
 const materials = new Map<number, THREE.MeshLambertMaterial[]>();
 for(const type of types){
   const side=texture(type), top=texture(type,'top'), bottom=texture(type.id===1?types[1]:type,'bottom');
   const mat = (map: THREE.Texture)=>new THREE.MeshLambertMaterial({map});
   materials.set(type.id,[mat(side.tex),mat(side.tex),mat(top.tex),mat(bottom.tex),mat(side.tex),mat(side.tex)]);
-  const button=document.createElement('button');button.className='slot'+(type.id===selected?' active':'');
-  button.title=`${type.name} · ${type.id}`;button.setAttribute('aria-label',type.name);button.setAttribute('aria-pressed',String(type.id===selected));button.dataset.type=String(type.id);
-  button.innerHTML=`<span class="number">${type.id}</span><img class="block-icon" src="${top.url}" alt="" /><span class="infinity">∞</span>`;
-  button.onclick=()=>select(type.id);if(type.id<=7)$('hotbar').append(button);
+  blockImages.set(type.id,top.url);
   const card = document.createElement('button'); card.className='material-card'; card.dataset.type=String(type.id); card.setAttribute('aria-pressed', 'false');
   card.innerHTML=`<img src="${top.url}" alt="" /><strong>${type.name}</strong><span>${type.description}</span><small>${type.id<=7?'快捷键 '+type.id:'图鉴选取'} · 无限供应</small>`;
   card.onclick=()=>{select(type.id);if(gameMode==='creative'){addItem(inventory,type.id,64);updateInventory();}toast(gameMode==='creative'?`已添加 64 个${type.name}，创造模式可无限放置`:`已选择${type.name}`);};$('material-grid').append(card);
 }
-function select(id: number){mining=null;egg=null;selected=id;document.querySelectorAll('.egg-card').forEach(b=>b.setAttribute('aria-pressed','false'));$('selected-name').textContent=(types[id-1]?.name??itemName(id));document.querySelectorAll<HTMLElement>('.slot, .material-card').forEach(b=>{b.classList.toggle('active',Number(b.dataset.type)===id);b.setAttribute('aria-pressed',String(Number(b.dataset.type)===id));});if(ready){updateInventory();scheduleSave();}}
+const quickbar=createQuickbar({key:`voxel-quickbar:${preferenceScope}`,name:id=>types[id-1]?.name??itemName(id),images:blockImages,select:id=>select(id)});
+function select(id: number){mining=null;egg=null;$<HTMLButtonElement>('quickbar-bind').disabled=false;selected=id;document.querySelectorAll('.egg-card').forEach(b=>b.setAttribute('aria-pressed','false'));$('selected-name').textContent=(types[id-1]?.name??itemName(id));document.querySelectorAll<HTMLElement>('.slot, .material-card').forEach(b=>{b.classList.toggle('active',Number(b.dataset.type??b.dataset.item)===id);b.setAttribute('aria-pressed',String(Number(b.dataset.type??b.dataset.item)===id));});if(ready){updateInventory();scheduleSave();}}
 
 const renderer=new THREE.WebGLRenderer({canvas:$<HTMLCanvasElement>('world'),antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
@@ -166,7 +168,8 @@ function openPanel(id:string){
 function closePanel(id:string){$<HTMLDialogElement>(id).close();pause();}
 $('open-settings').onclick=()=>openPanel('settings-panel');$('open-materials').onclick=()=>openPanel('materials-panel');
 $('menu-settings').onclick=()=>openPanel('settings-panel');$('menu-materials').onclick=()=>openPanel('materials-panel');
-for(const id of ['settings-panel','materials-panel']){ $(`${id}-close`).onclick=()=>closePanel(id);listen($(id),'cancel',e=>{e.preventDefault();closePanel(id);}); }
+$('open-help').onclick=()=>openPanel('help-panel');
+for(const id of ['settings-panel','materials-panel','help-panel']){ $(`${id}-close`).onclick=()=>closePanel(id);listen($(id),'cancel',e=>{e.preventDefault();closePanel(id);}); }
 for(const name of ['sensitivity','touchSensitivity','fov','volume','quality','shadows'] as const){listen($(`setting-${name}`),'input',()=>{
   const input=$<HTMLInputElement>(`setting-${name}`);
   settings={...settings,[name]:name==='shadows'?input.checked:name==='quality'?input.value:Number(input.value)} as Settings;
@@ -179,7 +182,7 @@ displaySettings();applySettings();
 for(const type of creatureTypes){
   const button=document.createElement('button');button.className='material-card egg-card';button.dataset.species=type.id;button.setAttribute('aria-pressed','false');
   button.innerHTML=`<span class="egg-icon" style="background:${type.color}"></span><strong>${type.name}生物蛋</strong><span>${type.habitat}</span><small>选中后右键／放置生成</small>`;
-  button.onclick=()=>{if(gameMode!=='creative'){toast('生物蛋仅在创造模式中可自由领取');return;}egg=type.id;document.querySelectorAll<HTMLElement>('.slot,.material-card').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false');});button.classList.add('active');button.setAttribute('aria-pressed','true');$('selected-name').textContent=type.name+'生物蛋';toast('关闭图鉴后，对准地面或水底放置');};$('creature-grid').append(button);
+  button.onclick=()=>{if(gameMode!=='creative'){toast('生物蛋仅在创造模式中可自由领取');return;}egg=type.id;$<HTMLButtonElement>('quickbar-bind').disabled=true;$('quickbar-selected').textContent=type.name+'生物蛋（在图鉴选用）';document.querySelectorAll<HTMLElement>('.slot,.material-card').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false');});button.classList.add('active');button.setAttribute('aria-pressed','true');$('selected-name').textContent=type.name+'生物蛋';toast('关闭图鉴后，对准地面或水底放置');};$('creature-grid').append(button);
 }
 
 const particles: { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }[]=[];
@@ -213,20 +216,25 @@ for(const item of [...toolItems,...ores.map(o=>({id:o.resource,name:o.resourceNa
   b.onclick=()=>{if(gameMode==='creative'){inventory[item.id]=t?1:Math.min(9999,(inventory[item.id]??0)+16);if(t)durability[t.id]=t.durability;}select(item.id);updateInventory();};$('equipment-grid').append(b);
 }
 const recipes:{id:number;name:string;recipe:Record<string,number>}[]=[...toolItems.map(t=>({id:t.id,name:t.name,recipe:t.recipe})),{id:205,name:'面包',recipe:{206:3}},{id:203,name:'烤肉',recipe:{202:1,30:1}}];
-for(const r of recipes){const b=document.createElement('button');b.className='material-card';b.innerHTML=`<strong>合成${r.name}</strong><span>${recipeLabel(r.recipe)}</span>`;b.onclick=()=>{const t=toolItems.find(t=>t.id===r.id);if(t&&(inventory[r.id]??0)>0){toast('已有此工具，使用完后可重新合成');return;}if(!t&&(inventory[r.id]??0)>=9999){toast('背包已满');return;}if(gameMode==='survival'&&!craft(r.recipe,inventory)){toast('材料不足：'+recipeLabel(r.recipe));return;}addItem(inventory,r.id);if(t)durability[t.id]=t.durability;select(r.id);updateInventory();scheduleSave();toast('合成了'+r.name);};$('craft-grid').append(b);}
+for(const r of recipes){const b=document.createElement('button');b.className='material-card';b.dataset.recipe=String(r.id);b.innerHTML=`<strong>合成${r.name}</strong><span>${recipeLabel(r.recipe)}</span>`;b.onclick=()=>{const t=toolItems.find(t=>t.id===r.id);if(t&&(inventory[r.id]??0)>0){toast('已有此工具，使用完后可重新合成');return;}if(!t&&(inventory[r.id]??0)>=9999){toast('背包已满');return;}if(gameMode==='survival'&&!craft(r.recipe,inventory)){toast('材料不足：'+recipeLabel(r.recipe));return;}addItem(inventory,r.id);if(t)durability[t.id]=t.durability;select(r.id);updateInventory();scheduleSave();toast('合成了'+r.name);};$('craft-grid').append(b);}
+inventoryBrowser=createInventoryBrowser({inventory:()=>inventory,creative:()=>gameMode==='creative',recipes,name:id=>types[id-1]?.name??itemName(id)});
 function updateInventory(){
   $('mode-label').textContent=gameMode==='creative'?'创造模式':'生存模式';$('menu-mode').textContent=gameMode==='creative'?'创造模式':'生存模式';
+  $('oxygen-hud').hidden=gameMode==='creative'||underwaterTime===0;
   $('health-hud').hidden=gameMode==='creative';$('health-value').textContent=Array.from({length:10},(_,i)=>health>i*2?'♥':'♡').join('');$('health-value').title=`生命 ${Math.ceil(health)} / 20`;
   $('hunger-hud').hidden=gameMode==='creative';$('hunger-value').innerHTML=Array.from({length:10},(_,i)=>`<span style="opacity:${hunger>i*2?1:.2}">🍞</span>`).join('');$('hunger-value').title=`饱腹 ${Math.ceil(hunger)} / 20`;
   $('held-item').textContent=(types[selected-1]?.name??itemName(selected))+(toolItems.some(t=>t.id===selected)?` · 耐久 ${durability[selected]??0}/${toolItems.find(t=>t.id===selected)!.durability}`:` ×${inventory[selected]??0}`);
   for(const b of document.querySelectorAll<HTMLElement>('#equipment-grid button')){const id=Number(b.dataset.item),tool=toolItems.find(t=>t.id===id);b.querySelector('small')!.textContent=tool?`持有 ${inventory[id]??0} · 耐久 ${durability[id]??0}/${tool.durability}`:`背包 ${inventory[id]??0}`;}
   $('health-fill').style.width=`${health/20*100}%`;
   $('inventory-description').textContent=gameMode==='creative'?'点击材料添加 64 个；创造模式无限供应，不会阵亡。':'E 打开背包。选取工具后 F 挖掘／攻击，R 使用／进食。工具每种保留一把，破损后可重新合成。' ;
-  for(const button of document.querySelectorAll<HTMLElement>('.slot')){const id=Number(button.dataset.type);button.querySelector('.infinity')!.textContent=gameMode==='creative'?'∞':String(inventory[id]??0);}
   for(const button of document.querySelectorAll<HTMLElement>('#material-grid .material-card')){const id=Number(button.dataset.type);button.querySelector('small')!.textContent=gameMode==='creative'?`添加 64 个 · 已领取 ${inventory[id]??0}`:`背包数量 ${inventory[id]??0}`;}
   for(const button of document.querySelectorAll<HTMLButtonElement>('.egg-card'))button.disabled=gameMode!=='creative';
   $<HTMLSelectElement>('game-mode').value=gameMode;$<HTMLInputElement>('keep-inventory').checked=keepInventory;
   $<HTMLSelectElement>('weather-choice').value=weatherChoice;
+  $<HTMLButtonElement>('quickbar-bind').disabled=Boolean(egg);
+  quickbar.update(egg?0:selected,inventory,durability,gameMode==='creative');
+  if(egg){$('quickbar-selected').textContent=creatureTypes.find(c=>c.id===egg)!.name+'生物蛋（在图鉴选用）';$<HTMLButtonElement>('quickbar-bind').disabled=true;}
+  inventoryBrowser?.refresh();
 }
 function updateDrops(){
   const p=body.translation();
@@ -262,6 +270,7 @@ listen($('keep-inventory'),'change',()=>{keepInventory=$<HTMLInputElement>('keep
 listen($('game-mode'),'change',()=>{gameMode=$<HTMLSelectElement>('game-mode').value as Mode;health=20;egg=null;underwaterTime=0;fallPeak=body.translation().y;updateInventory();scheduleSave();});
 listen($('weather-choice'),'change',()=>{weatherChoice=$<HTMLSelectElement>('weather-choice').value as WeatherChoice;updateDay();scheduleSave();});
 function spawn(){
+  underwaterTime=0;$('oxygen-hud').hidden=true;
   const x=0,z=12,top=worldData.top(x,z);
   body.setTranslation({x,y:top+1.5,z},true);body.setNextKinematicTranslation({x,y:top+1.5,z});
   verticalVelocity=0;fallPeak=top+1.5;yaw=-1.05;pitch=-.22;updateColliders(true);physics.step();updateCamera();
@@ -381,18 +390,19 @@ listen(document,'pointerlockchange',()=>{
 });
 listen(document,'mousemove',e=>{if(!active||touch||!(document.pointerLockElement===$('world')||(dragControls&&freeLook&&e.target===$('world'))))return;yaw-=e.movementX*.0023*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023*settings.sensitivity,-1.5,1.5);});
 listen(document,'keydown',e=>{
-  if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open]'))return;
+  if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open], #help-panel[open]'))return;
   if(e.code==='Escape'&&active){e.preventDefault();pause();return;}
   if(!active)return;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
   if(e.code==='KeyT'){freeLook=!freeLook;toast(freeLook?'触控板转向已开启':'光标已释放，按 T 恢复转向');return;}
   if(e.code==='KeyF'&&!e.repeat){edit(false);return;}
   if(e.code==='KeyR'&&!e.repeat){edit(true);return;}
+  if(e.code==='KeyH'){e.preventDefault();openPanel('help-panel');return;}
   if(e.code==='KeyE'){e.preventDefault();openPanel('materials-panel');return;}
   if(e.code==='KeyB'){e.preventDefault();pickMaterial();return;}
   if(e.code==='KeyM'){e.preventDefault();$(e.shiftKey?'minimap-expand':'minimap-toggle').click();return;}
   keys.add(e.code);
-  if(/^Digit[1-7]$/.test(e.code))select(+e.code.slice(-1));
+  if(/^Digit[1-9]$/.test(e.code))quickbar.selectSlot(+e.code.slice(-1)-1);
   if(e.code==='Space'&&!e.repeat&&grounded)verticalVelocity=7.7;
 });
 listen(document,'keyup',e=>keys.delete(e.code));
@@ -400,7 +410,7 @@ listen(window,'blur',()=>{keys.clear();if(active)pause();});
 listen(document,'visibilitychange',()=>{if(document.hidden&&active)pause();});
 listen($('world'),'contextmenu',e=>e.preventDefault());
 listen($('world'),'mousedown',e=>{if(touch||dragControls)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
-listen($('world'),'wheel',e=>{if(!active)return;e.preventDefault();if(dragControls){yaw-=e.deltaX*.004*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.deltaY*.004*settings.sensitivity,-1.5,1.5);}else select((selected-1+(e.deltaY>0?1:6))%7+1);},{passive:false});
+listen($('world'),'wheel',e=>{if(!active)return;e.preventDefault();if(dragControls){yaw-=e.deltaX*.004*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.deltaY*.004*settings.sensitivity,-1.5,1.5);}else quickbar.cycle(e.deltaY>0?1:-1);},{passive:false});
 $('play').onclick=enter;$('resume').onclick=enter;$('close-menu').onclick=enter;$('pause').onclick=pause;
 listen($('menu'),'cancel',e=>{e.preventDefault();enter();});
 $('respawn').onclick=()=>{spawn();saveWorld();enter();};$('save').onclick=()=>saveWorld(true);
@@ -465,6 +475,7 @@ function step(dt: number){
   if(grounded||swimming){if(grounded&&!wasGrounded&&!swimming){const hurt=fallDamage(fallPeak-after.y);if(hurt)damage(hurt,'摔落');}fallPeak=after.y;}else fallPeak=Math.max(fallPeak,after.y);
   const submerged=after.y+.6<water&&worldData.height(Math.round(after.x),Math.round(after.z))<water;
   underwaterTime=submerged?underwaterTime+dt:0;hazardTimer+=dt;
+  const air=Math.max(0,8-underwaterTime);$('oxygen-hud').hidden=!submerged||gameMode==='creative';$('oxygen-value').textContent='●'.repeat(Math.ceil(air/8*10))+'○'.repeat(10-Math.ceil(air/8*10));$('oxygen-value').title=`剩余氧气 ${air.toFixed(1)} 秒`;$('oxygen-hud').classList.toggle('oxygen-low',air<2);
   if(hazardTimer>=1){hazardTimer=0;if(underwaterTime>8)damage(2,'溺水');if(worldData.get(Math.round(after.x),Math.round(after.y-1.2),Math.round(after.z))===10)damage(4,'熔岩灼伤');}
   if(after.y<-8){if(gameMode==='survival')damage(20,'坠入虚空');else spawn();}updateCamera();
 }
@@ -500,7 +511,7 @@ async function init(){
 }
 function disposeGame() {
     if(disposed)return;
-    disposed=true;active=false;events.abort();cancelAnimationFrame(animationId);clearInterval(saveInterval);clearTimeout(saveTimer);clearTimeout(toastTimer);
+    disposed=true;active=false;quickbar.dispose();inventoryBrowser?.dispose();events.abort();cancelAnimationFrame(animationId);clearInterval(saveInterval);clearTimeout(saveTimer);clearTimeout(toastTimer);
     document.exitPointerLock?.();document.body.classList.remove('playing','paused','touch');
     chunkRenderer.dispose();creatures.dispose();weatherSystem.dispose();
     for(const mesh of dropMeshes.values())scene.remove(mesh);dropGeometry.dispose();dropMaterial.dispose();
@@ -517,4 +528,3 @@ try { await init(); } catch(error) { disposeGame(); throw error; }
 return { snapshot, save:()=>saveWorld(true), dispose:disposeGame };
 }
 export type GameHandle = Awaited<ReturnType<typeof startGame>>;
-

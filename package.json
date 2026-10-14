@@ -24,7 +24,9 @@
     "test:world:browser": "node --experimental-transform-types tests/world-browser.mjs",
     "test:modes:browser": "node tests/modes-browser.mjs",
     "test:survival": "npm run build:server && node --experimental-transform-types --test tests/survival.test.mjs",
-    "test:survival:browser": "node tests/survival-browser.mjs"
+    "test:survival:browser": "node tests/survival-browser.mjs",
+    "test:inventory:browser": "node tests/inventory-browser.mjs",
+    "test:ux:browser": "node --experimental-transform-types tests/ux-browser.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",

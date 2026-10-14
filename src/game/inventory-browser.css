@@ -1,0 +1,32 @@
+#materials-panel .inventory-browser-controls { margin:20px 0 12px; padding:16px; border:1px solid #d6dfcc; border-radius:14px; background:#edf2e5; }
+#materials-panel .inventory-search-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+#materials-panel .inventory-search-label { font-size:12px; font-weight:650; }
+#materials-panel #inventory-search { flex:1; min-width:0; width:100%; border:1px solid #c3cfb7; border-radius:8px; padding:11px 12px; background:#fffefa; color:#28382b; font:inherit; font-size:13px; }
+#materials-panel .inventory-categories { display:flex; flex-wrap:wrap; gap:6px; margin-top:13px; }
+#materials-panel .inventory-categories button { padding:8px 11px; border:1px solid #d1dac7; border-radius:8px; color:#4a5f40; background:#fffefa; font-size:12px; }
+#materials-panel .inventory-categories button[aria-pressed=true] { color:#fff; background:#49683d; border-color:#49683d; }
+#materials-panel .inventory-filter-row { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:14px; font-size:11px; }
+#materials-panel .inventory-filter-row label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+#materials-panel .inventory-filter-row input { width:16px; height:16px; margin:0; accent-color:#53754d; }
+#materials-panel #inventory-reset { padding:5px 0; margin-left:auto; color:#49683d; text-decoration:underline; text-underline-offset:3px; background:transparent; font-size:11px; }
+#materials-panel .inventory-result-count { color:#69765e; font-size:11px; margin:12px 0 0; }
+#materials-panel .inventory-empty { text-align:center; padding:32px 12px; border:1px dashed #c5d0ba; border-radius:12px; color:#506344; }
+#materials-panel .inventory-empty strong { font-size:15px; }
+#materials-panel .inventory-empty p { color:#69765e; font-size:12px; line-height:1.7; }
+#materials-panel [data-inventory-section] > p { font-size:12px; color:#63705f; line-height:1.7; }
+#materials-panel .recipe-availability { display:flex; flex-direction:column; align-items:flex-start; gap:5px; width:100%; padding-top:8px; border-top:1px solid #e1e7d9; }
+#materials-panel .recipe-availability > span { font-size:11px; line-height:1.6; }
+#materials-panel .recipe-availability .recipe-missing { color:#9d462c; }
+#materials-panel .recipe-availability .recipe-ready { color:#4d7339; }
+#materials-panel .recipe-availability .recipe-status { margin-top:3px; font-size:10px; line-height:1.6; }
+#materials-panel .material-card[data-craftable=true] { border-color:#a2b88b; }
+/* Explicitly override existing grid/card display declarations for the hidden attribute. */
+#materials-panel [hidden] { display:none!important; }
+@media(max-width:450px) {
+  #materials-panel .inventory-browser-controls { padding:12px; }
+  #materials-panel .inventory-search-label { width:100%; }
+  #materials-panel .inventory-categories { gap:5px; }
+  #materials-panel .inventory-categories button { padding:8px 9px; }
+  #materials-panel .material-card { min-width:0; padding:12px; overflow-wrap:anywhere; }
+  #materials-panel .inventory-filter-row { gap:10px; }
+}
