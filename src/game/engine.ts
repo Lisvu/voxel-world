@@ -64,6 +64,8 @@ let target: { position: number[]; normal: THREE.Vector3; type: number } | null;
 let saveTimer: ReturnType<typeof setTimeout>, toastTimer: ReturnType<typeof setTimeout>;
 let mined = 0, placed = 0;
 const keys = new Set<string>();
+let flying=false,lastJumpTap=-Infinity;
+const flightPointers=new Map<number,number>();
 const joystick = { x: 0, y: 0 };
 const saved = initial;
 if (saved?.version === 1 && Number.isInteger(saved.seed)) seed = saved.seed;
@@ -172,7 +174,7 @@ function displaySettings(){
 }
 function openPanel(id:string){
   if(id==='materials-panel')$('materials-title').textContent='背包 · 合成与装备';
-  mining=null;active=false;keys.clear();joystick.x=joystick.y=0;$('stick').style.transform='';
+  mining=null;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
   $<HTMLDialogElement>('menu').close();$<HTMLDialogElement>(id).showModal();document.exitPointerLock?.();document.body.classList.add('paused');void saveWorld();
 }
 function closePanel(id:string){$<HTMLDialogElement>(id).close();pause();}
@@ -240,6 +242,7 @@ for(const r of recipes){
 }
 inventoryBrowser=createInventoryBrowser({inventory:()=>inventory,creative:()=>gameMode==='creative',recipes,name:id=>types[id-1]?.name??itemName(id)});
 function updateInventory(){
+  refreshFlight();
   equipment=normalizeEquipment(equipment,inventory);equipmentPanel.refresh();$('armor-hud').hidden=gameMode==='creative';
   $('mode-label').textContent=gameMode==='creative'?'创造模式':'生存模式';$('menu-mode').textContent=gameMode==='creative'?'创造模式':'生存模式';
   $('oxygen-hud').hidden=gameMode==='creative'||underwaterTime===0;
@@ -276,7 +279,7 @@ function updateDrops(){
 function damage(amount:number,reason:string){
   if(dead||gameMode==='creative')return;amount=protectedDamage(amount,reason,equipment,inventory);health=applyDamage(gameMode,health,amount);updateInventory();
   if(health<=0){
-    dead=true;active=false;keys.clear();document.exitPointerLock?.();document.body.classList.add('paused');
+    dead=true;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;document.exitPointerLock?.();document.body.classList.add('paused');
     const p=body.translation(),retained=keepInventory||drops.length>=256,result=deathInventory(inventory,retained);
     if(Object.values(result.dropped).some(n=>n>0)){
       // At the bounded drop limit retain this inventory instead of silently deleting it.
@@ -291,9 +294,10 @@ function damage(amount:number,reason:string){
 $('respawn-death').onclick=()=>{dead=false;health=20;hunger=20;underwaterTime=0;$<HTMLDialogElement>('death-panel').close();spawn();updateInventory();scheduleSave();enter();};
 listen($('death-panel'),'cancel',e=>e.preventDefault());
 listen($('keep-inventory'),'change',()=>{keepInventory=$<HTMLInputElement>('keep-inventory').checked;updateInventory();scheduleSave();});
-listen($('game-mode'),'change',()=>{gameMode=$<HTMLSelectElement>('game-mode').value as Mode;health=20;egg=null;underwaterTime=0;fallPeak=body.translation().y;updateInventory();scheduleSave();});
+listen($('game-mode'),'change',()=>{gameMode=$<HTMLSelectElement>('game-mode').value as Mode;setFlying(false);health=20;egg=null;underwaterTime=0;fallPeak=body.translation().y;updateInventory();scheduleSave();});
 listen($('weather-choice'),'change',()=>{weatherChoice=$<HTMLSelectElement>('weather-choice').value as WeatherChoice;updateDay();scheduleSave();});
 function spawn(){
+  setFlying(false);
   underwaterTime=0;$('oxygen-hud').hidden=true;
   const x=0,z=12,top=worldData.top(x,z);
   body.setTranslation({x,y:top+1.5,z},true);body.setNextKinematicTranslation({x,y:top+1.5,z});
@@ -407,7 +411,7 @@ function enter(){
 }
 listen(document,'pointerlockerror',useDragControls);
 function pause(){
-  mining=null;entering=false;lookPointer=null;if(!started)return;active=false;keys.clear();joystick.x=joystick.y=0;$('stick').style.transform='';
+  mining=null;entering=false;lookPointer=null;if(!started)return;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
   document.exitPointerLock?.();document.body.classList.add('paused');if(!$<HTMLDialogElement>('menu').open)$<HTMLDialogElement>('menu').showModal();void saveWorld();
 }
 listen(document,'pointerlockchange',()=>{
@@ -415,6 +419,23 @@ listen(document,'pointerlockchange',()=>{
   else if(started&&!document.querySelector('dialog[open]'))pause();
 });
 listen(document,'mousemove',e=>{if(!active||touch||!(document.pointerLockElement===$('world')||(dragControls&&freeLook&&e.target===$('world'))))return;yaw-=e.movementX*.0023*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.movementY*.0023*settings.sensitivity,-1.5,1.5);});
+function refreshFlight(){
+  $('flight-controls').hidden=gameMode!=='creative';
+  $('flight-toggle').textContent=flying?'飞行：开':'飞行：关';$('flight-toggle').setAttribute('aria-pressed',String(flying));
+  $('flight-up').hidden=!flying;$('flight-down').hidden=!flying;
+}
+function setFlying(value:boolean){
+  flying=gameMode==='creative'&&value;verticalVelocity=0;lastJumpTap=-Infinity;flightPointers.clear();
+  if(controller){if(flying){controller.disableSnapToGround();controller.disableAutostep();}else{controller.enableSnapToGround(.2);controller.enableAutostep(.4,.2,false);}}
+  if(body)fallPeak=body.translation().y;
+  refreshFlight();
+}
+$('flight-toggle').onclick=()=>{if(active&&gameMode==='creative')setFlying(!flying);};
+for(const [id,direction] of [['flight-up',1],['flight-down',-1]] as const){
+  const button=$(id);
+  listen(button,'pointerdown',e=>{e.preventDefault();if(!active||!flying)return;flightPointers.set(e.pointerId,direction);try{button.setPointerCapture(e.pointerId);}catch{}});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'] as const)listen(button,event,e=>{flightPointers.delete(e.pointerId);});
+}
 listen(document,'keydown',e=>{
   if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open], #help-panel[open]'))return;
   if(e.code==='Escape'&&active){e.preventDefault();pause();return;}
@@ -429,10 +450,14 @@ listen(document,'keydown',e=>{
   if(e.code==='KeyM'){e.preventDefault();$(e.shiftKey?'minimap-expand':'minimap-toggle').click();return;}
   keys.add(e.code);
   if(/^Digit[1-9]$/.test(e.code))quickbar.selectSlot(+e.code.slice(-1)-1);
-  if(e.code==='Space'&&!e.repeat&&grounded)verticalVelocity=7.7;
+  if(e.code==='Space'&&!e.repeat){
+    const now=performance.now();
+    if(gameMode==='creative'&&now-lastJumpTap<=300){setFlying(!flying);return;}
+    lastJumpTap=now;if(!flying&&grounded)verticalVelocity=7.7;
+  }
 });
 listen(document,'keyup',e=>keys.delete(e.code));
-listen(window,'blur',()=>{keys.clear();if(active)pause();});
+listen(window,'blur',()=>{keys.clear();flightPointers.clear();lastJumpTap=-Infinity;if(active)pause();});
 listen(document,'visibilitychange',()=>{if(document.hidden&&active)pause();});
 listen($('world'),'contextmenu',e=>e.preventDefault());
 listen($('world'),'mousedown',e=>{if(touch||dragControls)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
@@ -486,15 +511,16 @@ function step(dt: number){
   let x=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+joystick.x;
   let z=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+joystick.y;
   const length=Math.hypot(x,z);if(length>1){x/=length;z/=length;}
-  const speed=keys.has('ShiftLeft')||keys.has('ShiftRight')?7:4.4;
-  if(grounded&&keys.has('Space'))verticalVelocity=7.7;
+  const speed=flying?7:keys.has('ShiftLeft')||keys.has('ShiftRight')?7:4.4;
+  if(!flying&&grounded&&keys.has('Space'))verticalVelocity=7.7;
   const current=body.translation(),water=worldData.waterLevel(Math.round(current.x),Math.round(current.z));
   const swimming=current.y<water&&worldData.height(Math.round(current.x),Math.round(current.z))<water;
-  verticalVelocity=swimming?(keys.has('Space')?3:Math.max(-1,verticalVelocity-3*dt)):Math.max(verticalVelocity-22*dt,-25);
+  if(flying){const up=keys.has('Space')||[...flightPointers.values()].includes(1),down=keys.has('ShiftLeft')||keys.has('ShiftRight')||[...flightPointers.values()].includes(-1);verticalVelocity=(Number(up)-Number(down))*6;}
+  else verticalVelocity=swimming?(keys.has('Space')?3:Math.max(-1,verticalVelocity-3*dt)):Math.max(verticalVelocity-22*dt,-25);
   const desired={x:(x*Math.cos(yaw)+z*Math.sin(yaw))*speed*dt,y:verticalVelocity*dt,z:(-x*Math.sin(yaw)+z*Math.cos(yaw))*speed*dt};
   controller.computeColliderMovement(playerCollider,desired);
   const movement=controller.computedMovement(),p=body.translation();
-  body.setNextKinematicTranslation({x:THREE.MathUtils.clamp(p.x+movement.x,-SIZE+.8,SIZE-.8),y:p.y+movement.y,z:THREE.MathUtils.clamp(p.z+movement.z,-SIZE+.8,SIZE-.8)});
+  body.setNextKinematicTranslation({x:THREE.MathUtils.clamp(p.x+movement.x,-SIZE+.8,SIZE-.8),y:flying?Math.min(98,p.y+movement.y):p.y+movement.y,z:THREE.MathUtils.clamp(p.z+movement.z,-SIZE+.8,SIZE-.8)});
   const wasGrounded=grounded;grounded=controller.computedGrounded();if(grounded&&verticalVelocity<0)verticalVelocity=0;
   if(verticalVelocity>0&&movement.y<desired.y-.001)verticalVelocity=0;
   physics.timestep=dt;physics.step();const after=body.translation();
@@ -532,7 +558,7 @@ async function init(){
   $<HTMLButtonElement>('play').disabled=false;$('play').innerHTML='<i data-lucide="play"></i><span>进入世界</span>';refreshIcons();
   if(saved)$('gate-meta').textContent='广袤世界 · 六大地貌 · 10 分钟一天';
   // Read-only diagnostics make browser smoke tests inspect the real simulation.
-  window.__voxel={getState:()=>({ready,active,seed,selected,night,grounded,yaw,pitch,position:{...body.translation()},target:target?{position:[...target.position],normal:target.normal.toArray(),type:target.type}:null,changes:changes.size,mined,placed,blocks:chunkRenderer.chunks.size*256,loadedChunks:chunkRenderer.chunks.size,cachedChunks:worldData.cachedChunks,creatures:creatures.counts,eggCreatures:creatures.snapshot().length,gameMode,health,hunger,equipment:{...equipment},armorDefense:armorDefense(equipment,inventory),durability:{...durability},keepInventory,inventory:{...inventory},drops:drops.length,weather:weatherSystem.kind,starsOpacity:(weatherSystem.stars.material as THREE.PointsMaterial).opacity,dead,timeSeconds,gameHour:clockState(timeSeconds).hour,biome:worldData.biome(Math.round(body.translation().x),Math.round(body.translation().z)),lightSources:blockLights.activeCount,drawCalls:renderer.info.render.calls})};
+  window.__voxel={getState:()=>({ready,active,flying,seed,selected,night,grounded,yaw,pitch,position:{...body.translation()},target:target?{position:[...target.position],normal:target.normal.toArray(),type:target.type}:null,changes:changes.size,mined,placed,blocks:chunkRenderer.chunks.size*256,loadedChunks:chunkRenderer.chunks.size,cachedChunks:worldData.cachedChunks,creatures:creatures.counts,eggCreatures:creatures.snapshot().length,gameMode,health,hunger,equipment:{...equipment},armorDefense:armorDefense(equipment,inventory),durability:{...durability},keepInventory,inventory:{...inventory},drops:drops.length,weather:weatherSystem.kind,starsOpacity:(weatherSystem.stars.material as THREE.PointsMaterial).opacity,dead,timeSeconds,gameHour:clockState(timeSeconds).hour,biome:worldData.biome(Math.round(body.translation().x),Math.round(body.translation().z)),lightSources:blockLights.activeCount,drawCalls:renderer.info.render.calls})};
   animationId=requestAnimationFrame(animate);saveInterval=setInterval(()=>{if(active)void saveWorld();},15000);
 }
 function disposeGame() {

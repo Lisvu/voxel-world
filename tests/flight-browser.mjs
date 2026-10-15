@@ -1,0 +1,29 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+ const changes=[];for(let x=-5;x<=5;x++)for(let z=6;z<=17;z++){changes.push([`${x},20,${z}`,3]);changes.push([`${x},28,${z}`,3]);}
+ const world={id:'flight-test',name:'飞行测试',seed:42,revision:0,updatedAt:new Date().toISOString(),blockCount:0,snapshot:{version:1,seed:42,generatorVersion:2,changes,gameMode:'creative',position:{x:0,y:21.3,z:12},yaw:0,pitch:0,health:20,hunger:20}};
+ async function setup(context){const page=await context.newPage();await page.addInitScript(()=>{Element.prototype.requestPointerLock=()=>Promise.reject(new Error('Unavailable'));});await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;return route.fulfill({json:path==='/api/auth/me'?{id:'flight-user',name:'测试',email:'flight@example.test'}:path==='/api/worlds'?[world]:path.endsWith('/save')?{revision:1}:world});});await page.goto(process.env.TEST_WEB_URL??'http://localhost:5173');await page.getByRole('button',{name:'进入 飞行测试'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);await page.locator('#play').click();return page;}
+ const desktop=await browser.newContext({viewport:{width:1280,height:850}}),page=await setup(desktop),errors=[];page.on('pageerror',e=>errors.push(e.message));const state=()=>page.evaluate(()=>window.__voxel.getState());
+ const start=(await state()).position.y;await page.keyboard.press('Space');await page.waitForTimeout(80);await page.keyboard.down('Space');await page.waitForTimeout(850);await page.keyboard.up('Space');assert.ok((await state()).position.y>start+3,'double-space then holding Space must fly above jump height');
+ const hovering=(await state()).position.y;await page.waitForTimeout(500);assert.ok(Math.abs((await state()).position.y-hovering)<.15,'releasing ascent should hover');
+ await page.keyboard.down('Space');await page.waitForTimeout(1200);await page.keyboard.up('Space');assert.ok((await state()).position.y<27.2,'flying must collide with ceiling');
+ await page.keyboard.down('Shift');await page.waitForTimeout(500);await page.keyboard.up('Shift');assert.ok((await state()).position.y<hovering,'Shift descends');
+ await page.keyboard.down('Space');await page.keyboard.press('e');const paused=(await state()).position.y;await page.waitForTimeout(300);assert.ok(Math.abs((await state()).position.y-paused)<.1);await page.keyboard.up('Space');await page.locator('#materials-panel-close').click();await page.locator('#resume').click();await page.waitForTimeout(300);assert.ok(Math.abs((await state()).position.y-paused)<.15,'resume must not keep stale ascent input');
+ await page.keyboard.press('Escape');await page.locator('#menu-settings').click();await page.locator('#game-mode').selectOption('survival');await page.locator('#settings-panel-close').click();await page.locator('#resume').click();assert.equal(await page.locator('#flight-toggle').isVisible(),false);await page.waitForTimeout(1200);assert.ok((await state()).position.y<22,'survival restores gravity');
+ const ground=(await state()).position.y;await page.keyboard.press('Space');await page.waitForTimeout(80);await page.keyboard.down('Space');await page.waitForTimeout(850);await page.keyboard.up('Space');assert.ok((await state()).position.y<ground+2,'survival double-space cannot fly');await desktop.close();
+ const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),phone=await setup(mobile);const mobileState=()=>phone.evaluate(()=>window.__voxel.getState());await phone.locator('#flight-toggle').tap();
+ const initial=(await mobileState()).position.y;await phone.locator('#flight-up').dispatchEvent('pointerdown',{pointerId:7});await phone.waitForTimeout(650);await phone.locator('#flight-up').dispatchEvent('pointerup',{pointerId:7});assert.ok((await mobileState()).position.y>initial+2,'touch ascent raises player');
+ const high=(await mobileState()).position.y;await phone.locator('#flight-down').dispatchEvent('pointerdown',{pointerId:8});await phone.waitForTimeout(350);await phone.locator('#flight-down').dispatchEvent('pointercancel',{pointerId:8});await phone.waitForTimeout(100);const low=(await mobileState()).position.y;assert.ok(low<high);await phone.waitForTimeout(350);assert.ok(Math.abs((await mobileState()).position.y-low)<.15,'cancelled pointer must stop descending');
+ for(const id of ['flight-toggle','flight-up','flight-down']){const box=await phone.locator('#'+id).boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);}
+ await phone.screenshot({path:'screenshots/creative-flight-mobile.png'});await mobile.close();
+ world.snapshot.position={x:0,y:97,z:12};world.snapshot.changes=[];
+ const highContext=await browser.newContext({viewport:{width:1280,height:850}}),highPage=await setup(highContext);
+ assert.equal(await highPage.locator('#flight-toggle').getAttribute('aria-pressed'),'false','reentry starts with flight off');
+ await highPage.locator('#flight-toggle').click();await highPage.keyboard.down('Space');await highPage.waitForTimeout(900);await highPage.keyboard.up('Space');
+ const capped=await highPage.evaluate(()=>window.__voxel.getState().position.y);assert.ok(capped>97.8&&capped<=98,'flight height stays inside save coordinate limits');
+ await highPage.keyboard.press('Space');await highPage.waitForTimeout(80);await highPage.keyboard.press('Space');assert.equal(await highPage.locator('#flight-toggle').getAttribute('aria-pressed'),'false','double space also disables flight');
+ await highPage.waitForTimeout(600);assert.ok(await highPage.evaluate(()=>window.__voxel.getState().position.y<97),'turning flight off restores gravity');
+ await highContext.close();assert.deepEqual(errors,[]);console.log('Creative flight, hover, collision, pause input clearing, survival restriction and touch controls passed.');
+}finally{await browser.close();}
