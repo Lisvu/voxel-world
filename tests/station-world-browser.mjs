@@ -1,0 +1,19 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1280,height:850}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{Element.prototype.requestPointerLock=()=>Promise.reject(new Error('Unavailable'));});
+ const changes=[];for(let x=-6;x<=6;x++)for(let z=4;z<=17;z++)changes.push([`${x},20,${z}`,3]);changes.push(['0,21,9',23]);
+ let snapshot={version:1,seed:42,generatorVersion:2,changes,gameMode:'creative',inventory:{15:2,30:2},position:{x:0,y:21.3,z:12},yaw:0,pitch:-.3},saved;
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;const world={id:'station-world',name:'熔炉测试',seed:42,revision:0,updatedAt:new Date().toISOString(),blockCount:0,snapshot};if(path.endsWith('/save'))saved=route.request().postDataJSON().snapshot;return route.fulfill({json:path==='/api/auth/me'?{id:'station-user',name:'测试',email:'station@example.test'}:path==='/api/worlds'?[world]:path.endsWith('/save')?{revision:1}:world});});
+ async function open(){await page.goto(process.env.TEST_WEB_URL??'http://localhost:5173');await page.evaluate(()=>localStorage.clear());await page.getByRole('button',{name:'进入 熔炉测试'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);await page.locator('#play').click();await page.keyboard.press('t');await page.waitForFunction(()=>window.__voxel.getState().target?.type===23);}
+ await open();await page.keyboard.press('r');await page.locator('#station-panel[open]').waitFor();
+ await page.locator('#station-item').selectOption('15');await page.locator('#station-slot-0').click();await page.locator('#station-item').selectOption('30');await page.locator('#station-slot-1').click();
+ await page.waitForTimeout(1800);await page.locator('#station-panel-close').click();await page.waitForTimeout(800);assert.ok(saved.stations['0,21,9'].progress>0);const progress=saved.stations['0,21,9'].progress;
+ await page.waitForTimeout(1000);await page.locator('#save').click();await page.waitForTimeout(500);assert.equal(saved.stations['0,21,9'].progress,progress,'paused menu stops furnace');snapshot=structuredClone(saved);
+ await open();await page.keyboard.press('r');await page.waitForFunction(()=>document.querySelector('#station-slot-2')?.textContent.includes('铜'),null,{timeout:20000});await page.locator('#station-slot-2').click();assert.equal(await page.evaluate(()=>window.__voxel.getState().inventory[31]),1);
+ await page.locator('#station-panel-close').click();await page.locator('#resume').click();await page.keyboard.press('f');await page.waitForFunction(()=>window.__voxel.getState().mined===1);await page.keyboard.press('Escape');await page.locator('#save').click();await page.waitForTimeout(700);assert.deepEqual(saved.stations,{});assert.equal((saved.inventory[23]??0)+saved.drops.reduce((n,d)=>n+(d.items[23]??0),0),1,'broken furnace is conserved through magnetic pickup');
+ snapshot={...snapshot,stations:{'0,21,9':{kind:'furnace',slots:[{id:15,count:2},null,null],progress:0,burn:0}},drops:Array.from({length:256},(_,i)=>({id:'full-'+i,position:{x:100,y:21,z:100},items:{3:1},durability:{}}))};await open();await page.keyboard.press('f');await page.waitForTimeout(300);assert.equal(await page.evaluate(()=>window.__voxel.getState().mined),0);await page.keyboard.press('Escape');await page.locator('#save').click();await page.waitForTimeout(700);assert.equal(saved.stations['0,21,9'].slots[0].count,2,'drop limit preserves the entire station');
+ assert.deepEqual(errors,[]);console.log('Real game furnace interaction, ticking in station modal, pause, save/reload, output and station break passed.');
+}finally{await browser.close();}

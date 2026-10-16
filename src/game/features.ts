@@ -13,10 +13,12 @@ export const blockTypes = [
   { id: 11, name: '沼泽土', color: '#536044', description: '湿地的深色土壤。' },
   { id: 12, name: '暮色苔', color: '#55435f', description: '暮色森林的紫色地表。' },
   { id: 13, name: '暮色树叶', color: '#705d8e', description: '幽暗森林中的高大树冠。' },
-  ...ores.map(o=>({id:o.id,name:o.name,color:'#828b8f',side:o.color,description:'地下矿脉 · 挖掘获得'+o.resourceName})),
+  ...ores.map(o=>({id:o.id,name:o.name,color:'#828b8f',side:o.color,description:[15,16,17].includes(o.id)?'挖掘获得矿石，使用熔炉炼成'+o.resourceName:'地下矿脉 · 挖掘获得'+o.resourceName})),
   {id:20,name:'工作台',color:'#b78b51',side:'#795534',description:'4 个橡木合成；对准后按 R 打开合成界面。'},
   {id:21,name:'火把',color:'#ffd080',side:'#b27835',description:'橡木与煤合成；暖光照亮半径 10 格。'},
   {id:22,name:'灯笼',color:'#ffdd9b',side:'#6a7277',description:'铁与煤合成；暖光照亮半径 14 格。'},
+  {id:23,name:'熔炉',color:'#686e73',side:'#343940',description:'8 个岩石合成；放入原料和燃料进行熔炼。'},
+  {id:24,name:'玻璃',color:'#b6e2e8',side:'#84bec9',description:'熔炼细沙获得的建筑材料。'},
 ];
 export type Settings = { sensitivity: number; touchSensitivity: number; fov: number; volume: number; quality: 'low' | 'medium' | 'high'; shadows: boolean };
 export const defaults: Settings = { sensitivity: 1, touchSensitivity: 1, fov: 68, volume: 60, quality: 'high', shadows: true };

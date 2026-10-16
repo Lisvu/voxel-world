@@ -1,7 +1,7 @@
 import {chromium} from '@playwright/test';import assert from 'node:assert/strict';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const origin=process.env.TEST_WEB_URL??'http://localhost:5173';
-const changes=[];for(let x=-5;x<=5;x++)for(let z=5;z<=16;z++)changes.push([`${x},20,${z}`,3]);
+const changes=[];for(let x=-5;x<=5;x++)for(let z=5;z<=16;z++)changes.push([`${x},20,${z}`,3]);changes.push(['0,21,9',20]);
 const snapshot={version:1,seed:42,generatorVersion:2,changes,gameMode:'survival',health:12,hunger:8,inventory:{125:1,200:2,34:6,4:10},durability:{125:2},selected:125,position:{x:0,y:21.3,z:12},yaw:0,pitch:-.6,timeSeconds:200,creatures:[],drops:[]};
 let saved;
 try{
@@ -13,9 +13,15 @@ try{
  const before=await state();await page.mouse.move(700,420);await page.mouse.move(710,420);await page.waitForTimeout(80);assert.notEqual((await state()).yaw,before.yaw,'trackpad-style hover rotates without holding');await page.keyboard.press('t');
  await page.keyboard.press('f');await page.waitForFunction(()=>window.__voxel.getState().mined>=1);assert.equal((await state()).durability[125],1);
  await page.keyboard.down('w');await page.waitForTimeout(500);await page.keyboard.up('w');await page.waitForFunction(()=>(window.__voxel.getState().inventory[3]??0)>0);
- await page.keyboard.press('e');await page.locator('[data-item="200"]').click();await page.locator('#materials-panel-close').click();await page.locator('#resume').click();await page.keyboard.press('r');assert.equal((await state()).inventory[200],1);assert.ok((await state()).hunger>before.hunger);
- await page.keyboard.press('e');await page.locator('#craft-grid').getByRole('button',{name:'合成钻石剑'}).click();assert.equal((await state()).inventory[126],1);assert.equal((await state()).durability[126],1562);assert.equal((await state()).inventory[34],4);assert.equal(await page.locator('.egg-card').count(),10);
- await page.locator('#materials-panel-close').click();await page.locator('#save').click();await page.waitForTimeout(500);assert.equal(saved.durability[126],1562);assert.ok(saved.hunger>8);assert.deepEqual(errors,[]);console.log('Trackpad hover, timed mining, tool wear, magnetic pickup, eating, crafting, ten eggs and save passed.');
+ await page.keyboard.press('e');await page.locator('[data-item="200"]').click();await page.locator('#materials-panel-close').click();await page.locator('#resume').click();
+ await page.locator('#world').dispatchEvent('wheel',{deltaY:((await state()).pitch+1.3)/.004});
+ await page.keyboard.press('r');assert.equal((await state()).inventory[200],1);assert.ok((await state()).hunger>before.hunger);
+ await page.keyboard.press('e');const inventoryBefore=structuredClone((await state()).inventory);await page.locator('#craft-grid').getByRole('button',{name:'合成钻石剑'}).click();assert.deepEqual((await state()).inventory,inventoryBefore,'advanced backpack recipes direct the player to a workbench');assert.equal(await page.locator('.egg-card').count(),10);
+ await page.locator('#materials-panel-close').click();await page.locator('#resume').click();
+ const aim=await state(),dx=.5-aim.position.x,dz=9.5-aim.position.z,yaw=Math.atan2(-dx,-dz),pitch=Math.atan2(21.5-(aim.position.y+.6),Math.hypot(dx,dz));
+ await page.locator('#world').dispatchEvent('wheel',{deltaX:(aim.yaw-yaw)/.004,deltaY:(aim.pitch-pitch)/.004});
+ await page.waitForFunction(()=>window.__voxel.getState().target?.type===20);await page.keyboard.press('r');await page.locator('#station-panel[open]').waitFor();await page.locator('#station-recipe').selectOption('126');await page.locator('#station-fill').click();await page.locator('#station-craft').click();assert.equal((await state()).inventory[126],1);assert.equal((await state()).durability[126],1562);assert.equal((await state()).inventory[34],4);
+ await page.locator('#station-panel-close').click();await page.locator('#save').click();await page.waitForTimeout(500);assert.equal(saved.durability[126],1562);assert.ok(saved.hunger>8);assert.deepEqual(errors,[]);console.log('Trackpad hover, timed mining, tool wear, magnetic pickup, eating, workbench crafting, ten eggs and save passed.');
  snapshot.selected=126;snapshot.inventory={126:1};snapshot.durability={126:2};snapshot.pitch=-.25;snapshot.hunger=0;snapshot.health=10;snapshot.position={x:0,y:21.3,z:12};
  snapshot.creatures=['cow','sheep','chicken','fish','yak','villager','swallow','eagle','sparrow','cat'].map((species,i)=>({id:'test-'+species,species,x:i===0?0:10+i,y:species==='fish'?10:['swallow','eagle','sparrow'].includes(species)?30:20.5,z:10,yaw:0}));
  await page.reload();await page.evaluate(()=>localStorage.clear());await page.getByRole('button',{name:'进入 测试世界'}).click();await page.waitForFunction(()=>window.__voxel?.getState().ready);await page.locator('#play').click();await page.waitForFunction(()=>window.__voxel.getState().active);await page.keyboard.press('t');

@@ -1,0 +1,43 @@
+#station-panel { box-sizing:border-box; width:min(560px,calc(100vw - 24px)); padding:24px; }
+#station-panel [hidden] { display:none!important; }
+#station-panel .menu-heading { top:-24px; }
+#station-panel h2 { margin:8px 0; }
+#station-panel label { display:flex; flex-direction:column; gap:7px; min-width:0; color:#506344; font-size:12px; font-weight:650; }
+#station-panel select { box-sizing:border-box; width:100%; min-width:0; border:1px solid #bfceb2; border-radius:8px; padding:10px 9px; color:#28382b; background:#fffefa; font:inherit; font-size:13px; }
+#station-panel button { cursor:pointer; }
+#station-panel button:disabled { cursor:default; opacity:.48; }
+#station-panel button:focus-visible, #station-panel select:focus-visible { outline:3px solid #7f9a6e; outline-offset:3px; }
+#station-panel .station-transfer { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:12px; margin:20px 0 14px; }
+#station-panel .station-recipe-controls { display:flex; align-items:end; gap:10px; margin-bottom:20px; }
+#station-panel .station-recipe-controls label { flex:1; }
+#station-panel #station-fill, #station-panel #station-craft { padding:11px 14px; border:1px solid #47663a; border-radius:9px; color:#fffefa; background:#4d6c40; font:inherit; font-size:12px; font-weight:650; white-space:nowrap; }
+#station-panel .station-workspace { display:grid; grid-template-columns:minmax(0,1fr) 124px; gap:16px; align-items:center; padding:16px; border:1px solid #d5dfca; border-radius:14px; background:#eaf0e1; }
+#station-panel .station-grid, #station-panel .station-furnace { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; min-width:0; }
+#station-panel .station-cell { display:flex; flex-direction:column; align-items:stretch; min-width:0; text-align:center; }
+#station-panel .station-cell-label { margin-bottom:5px; font-size:10px; color:#63725a; }
+#station-panel .station-slot { display:flex; flex-direction:column; justify-content:center; align-items:center; gap:5px; min-width:0; width:100%; min-height:72px; padding:8px 3px; border:1px solid #c5d1b8; border-radius:9px; color:#53664a; background:#f9fbf4; overflow-wrap:anywhere; }
+#station-panel .station-slot[data-occupied=true] { border-color:#91ab7c; background:#fffefa; color:#28382b; }
+#station-panel .station-slot strong { font-size:12px; font-weight:650; line-height:1.4; }
+#station-panel .station-slot span { font-size:10px; color:#6b795f; }
+#station-panel .station-take { margin-top:4px; padding:5px; border:0; border-radius:5px; color:#4d6c40; background:transparent; font-size:10px; text-decoration:underline; text-underline-offset:2px; }
+#station-panel .station-result { display:flex; flex-direction:column; gap:12px; align-items:stretch; text-align:center; }
+#station-panel .station-result > span { color:#63725a; font-size:11px; }
+#station-panel #station-output { display:flex; align-items:center; justify-content:center; min-height:64px; padding:9px; border:1px dashed #a6b998; border-radius:9px; color:#34492b; background:#f9fbf4; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+#station-panel .station-workspace.is-furnace { display:block; }
+#station-panel .station-furnace .station-slot { min-height:92px; }
+#station-panel .station-furnace-status { margin:18px 0; }
+#station-panel .station-furnace-status label { flex-direction:row; justify-content:space-between; }
+#station-panel progress { width:100%; height:12px; margin-top:9px; accent-color:#66844e; }
+#station-panel .station-furnace-status p, #station-panel .station-hint { color:#68755f; font-size:11px; line-height:1.7; }
+#station-panel .station-status { min-height:20px; margin:14px 0 6px; font-size:12px; color:#4d6c40; line-height:1.6; }
+@media(max-width:450px) {
+  #station-panel { padding:18px; }
+  #station-panel .menu-heading { top:-18px; }
+  #station-panel .station-workspace { grid-template-columns:minmax(0,1fr); padding:12px; gap:12px; }
+  #station-panel .station-grid { gap:8px; }
+  #station-panel .station-slot { min-height:64px; }
+  #station-panel .station-result { display:grid; grid-template-columns:minmax(0,1fr) 106px; gap:8px; align-items:center; }
+  #station-panel .station-result > span { grid-column:1 / -1; text-align:left; }
+  #station-panel #station-output { min-height:36px; padding:6px; }
+  #station-panel .station-transfer { grid-template-columns:minmax(0,1fr) 86px; gap:8px; }
+}

@@ -22,7 +22,7 @@ export class ChunkRenderer {
     this.atlas=new THREE.CanvasTexture(canvas);this.atlas.magFilter=THREE.NearestFilter;this.atlas.minFilter=THREE.NearestFilter;this.atlas.colorSpace=THREE.SRGBColorSpace;
     const glow=document.createElement('canvas');glow.width=64;glow.height=512;const glowContext=glow.getContext('2d')!;glowContext.fillStyle='#000';glowContext.fillRect(0,0,64,512);for(const id of [21,22])glowContext.drawImage(canvas,0,(id-1)*16,64,16,0,(id-1)*16,64,16);
     this.glow=new THREE.CanvasTexture(glow);this.glow.magFilter=THREE.NearestFilter;this.glow.minFilter=THREE.NearestFilter;this.glow.colorSpace=THREE.SRGBColorSpace;
-    this.material=new THREE.MeshLambertMaterial({map:this.atlas,emissive:0xffffff,emissiveMap:this.glow,emissiveIntensity:.8});
+    this.material=new THREE.MeshLambertMaterial({map:this.atlas,emissive:0xffffff,emissiveMap:this.glow,emissiveIntensity:.8,alphaTest:.5,side:THREE.DoubleSide});
   }
   get liquids(){return [...this.chunks.values()].map(c=>c.water);}
   get meshes(){return [...this.chunks.values()].map(c=>c.solid);}
@@ -46,7 +46,7 @@ export class ChunkRenderer {
       for(let y=0;y<HEIGHT;y++){
         const type=data[(x*16+z)*HEIGHT+y];if(!type)continue;
         for(let f=0;f<6;f++){
-          const {n,v}=faces[f],small=type===21||type===22,neighbor=this.world.get(wx+n[0],y+n[1],wz+n[2]);if(y===0&&n[1]===-1||!small&&neighbor&&neighbor!==21&&neighbor!==22)continue;
+          const {n,v}=faces[f],small=type===21||type===22,neighbor=this.world.get(wx+n[0],y+n[1],wz+n[2]);if(y===0&&n[1]===-1||!small&&neighbor&&neighbor!==21&&neighbor!==22&&neighbor!==24)continue;
           const start=positions.length/3,tile=f===2?1:f===3?2:0;
           const u0=(tile*16+.1)/64,u1=(tile*16+15.9)/64,v0=1-((type-1)*16+15.9)/512,v1=1-((type-1)*16+.1)/512;
           for(const a of v){positions.push(wx+a[0]*(type===21?.22:type===22?.65:1),y+a[1]*(type===21?.8:type===22?.8:1)-(small?.1:0),wz+a[2]*(type===21?.22:type===22?.65:1));normals.push(...n);}

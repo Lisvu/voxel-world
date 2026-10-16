@@ -1,3 +1,5 @@
+import { createStation, advanceFurnace, stationContents, type Station } from '../../shared/stations';
+import { createStationPanel } from './StationPanel';
 import { armorItems, normalizeEquipment, armorDefense, protectedDamage } from '../../shared/armor';
 import { createEquipment } from './Equipment';
 import { BlockLights } from './BlockLights';
@@ -49,6 +51,7 @@ let hunger=initial.hunger??20, hungerClock=0,regenClock=0;
 let durability:Record<string,number>={...(initial.durability??{})};
 let mining:{key:string;elapsed:number;duration:number}|null=null,attackCooldown=0;
 let inventory:Inventory={...(initial.inventory ?? {})},drops:WorldDrop[]=structuredClone(initial.drops ?? []);
+const stations:Record<string,Station>=structuredClone(initial.stations??{});
 let equipment=normalizeEquipment(initial.equipment,inventory);
 let weatherChoice:WeatherChoice=initial.weather ?? 'auto';
 let hazardTimer=0,underwaterTime=0,fallPeak=0,dead=false;
@@ -63,6 +66,8 @@ let physics: RAPIER.World, body: RAPIER.RigidBody, playerCollider: RAPIER.Collid
 let target: { position: number[]; normal: THREE.Vector3; type: number } | null;
 let saveTimer: ReturnType<typeof setTimeout>, toastTimer: ReturnType<typeof setTimeout>;
 let mined = 0, placed = 0;
+let placing=false,placeTimer=0;
+function beginPlace(){if(!active)return;placing=true;placeTimer=.18;edit(true);}
 const keys = new Set<string>();
 let flying=false,lastJumpTap=-Infinity;
 const flightPointers=new Map<number,number>();
@@ -95,6 +100,8 @@ function texture(type: typeof types[number], face='side') {
     else {for(let x=1;x<16;x+=3){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+1,16);ctx.stroke();}}
   }
   if(type.id===7){ctx.fillStyle='#745b3988';for(let y=3;y<16;y+=4)ctx.fillRect(0,y,16,1);ctx.fillRect(5,0,1,3);ctx.fillRect(12,4,1,3);ctx.fillRect(8,8,1,3);}
+  if(type.id===23){ctx.fillStyle='#34383c';ctx.fillRect(2,3,12,4);ctx.fillRect(3,10,10,5);ctx.fillStyle='#8d9499';ctx.fillRect(2,8,12,1);}
+  if(type.id===24){ctx.clearRect(2,2,12,12);ctx.strokeStyle='#d3f4f8';ctx.strokeRect(.5,.5,15,15);ctx.fillStyle='#e7ffff';ctx.fillRect(3,3,2,5);ctx.fillRect(5,6,2,3);}
   if(type.id===3){ctx.fillStyle='#4d575630';ctx.fillRect(2,4,4,2);ctx.fillRect(9,10,5,2);}
   if(type.id>=14&&type.id<=19){ctx.fillStyle=type.side??type.color;for(let i=0;i<8;i++)ctx.fillRect(Math.floor(random(i,2,type.id)*14),Math.floor(random(i,9,type.id)*14),2,2);}
   if(type.id===20){ctx.strokeStyle='#4f3427';ctx.lineWidth=1;for(let n=1;n<16;n+=5){ctx.strokeRect(n,1,4,14);if(face==='top')ctx.strokeRect(1,n,14,4);}}
@@ -174,7 +181,7 @@ function displaySettings(){
 }
 function openPanel(id:string){
   if(id==='materials-panel')$('materials-title').textContent='背包 · 合成与装备';
-  mining=null;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
+  mining=null;active=false;keys.clear();placing=false;flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
   $<HTMLDialogElement>('menu').close();$<HTMLDialogElement>(id).showModal();document.exitPointerLock?.();document.body.classList.add('paused');void saveWorld();
 }
 function closePanel(id:string){$<HTMLDialogElement>(id).close();pause();}
@@ -222,17 +229,19 @@ function wearTool(){const t=heldTool();if(!t||gameMode==='creative')return;durab
 function dropItems(x:number,y:number,z:number,items:Inventory){drops.push({id:crypto.randomUUID(),position:{x,y:Math.min(95,y),z},items,durability:{}});}
 function eat(){const food=foods.find(f=>f.id===selected&&f.hunger>0);if(!food||hunger>=20){toast('选择食物后按 R 进食，饱腹时无需进食');return;}if(!consumeItem(gameMode,inventory,food.id)){toast('没有这种食物');return;}hunger=Math.min(20,hunger+food.hunger);updateInventory();scheduleSave();toast('食用了'+food.name);}
 function recipeLabel(recipe:Record<string,number>){return Object.entries(recipe).map(([id,n])=>(types[Number(id)-1]?.name??itemName(Number(id)))+' ×'+n).join(' + ');}
+const stationPanel=createStationPanel({name:id=>types[id-1]?.name??itemName(id),inventory:()=>inventory,creative:()=>gameMode==='creative',changed:craftedId=>{const tool=toolItems.find(t=>t.id===craftedId);if(tool)durability[tool.id]=tool.durability;updateInventory();scheduleSave();},close:()=>{closePanel('station-panel');void saveWorld();}});
 const equipmentPanel=createEquipment({inventory:()=>inventory,equipment:()=>equipment,change:next=>{equipment=next;updateInventory();scheduleSave();}});
 for(const item of [...armorItems,...toolItems,...ores.map(o=>({id:o.resource,name:o.resourceName})),...foods]){
   const b=document.createElement('button');b.className='material-card';b.dataset.item=String(item.id);const t=toolItems.find(t=>t.id===item.id),armor=armorItems.find(a=>a.id===item.id);
   b.innerHTML=`<strong>${item.name}</strong><span>${armor?`防御 ${armor.defense} · 在装备栏穿戴`:t?`攻击 ${t.damage}${t.kind==='sword'?'':` · 对应方块采集 ×${t.speed}`}`:foods.find(f=>f.id===item.id)?.hunger?`恢复 ${foods.find(f=>f.id===item.id)!.hunger/2} 个面包 · R 进食`:'合成材料'}</span>${t?`<span>适用：${{pickaxe:'岩石／矿石',axe:'木材',shovel:'土／沙／雪',hoe:'树叶',sword:'战斗（无采集加速）'}[t.kind]}</span>`:''}<small></small>`;
   b.onclick=()=>{if(gameMode==='creative'){inventory[item.id]=t||armor?1:Math.min(9999,(inventory[item.id]??0)+16);if(t)durability[t.id]=t.durability;}select(item.id);updateInventory();};$('equipment-grid').append(b);
 }
-const recipes:{id:number;name:string;recipe:Record<string,number>}[]=[...armorItems,...constructionRecipes,...toolItems.map(t=>({id:t.id,name:t.name,recipe:t.recipe})),{id:205,name:'面包',recipe:{206:3}},{id:203,name:'烤肉',recipe:{202:1,30:1}}];
+const recipes:{id:number;name:string;recipe:Record<string,number>}[]=[...armorItems,...constructionRecipes,...toolItems.map(t=>({id:t.id,name:t.name,recipe:t.recipe})),{id:205,name:'面包',recipe:{206:3}}];
 const recipeTracker=createRecipeTracker({key:`voxel-recipe:${preferenceScope}`,recipes,name:id=>types[id-1]?.name??itemName(id)});
 for(const r of recipes){
-  const b=document.createElement('button');b.className='material-card';b.dataset.recipe=String(r.id);b.innerHTML=`<strong>合成${r.name}</strong><span>${recipeLabel(r.recipe)}</span>`;
+  const b=document.createElement('button');b.className='material-card';b.dataset.recipe=String(r.id);b.innerHTML=`<strong>合成${r.name}</strong><span>${recipeLabel(r.recipe)}</span>${[20,21].includes(r.id)?'':'<small>需放置工作台 · 对准后按 R</small>'}`;
   b.onclick=()=>{
+    if(![20,21].includes(r.id)){toast('请放置工作台，对准它按 R 使用 3×3 合成格');return;}
     const t=toolItems.find(t=>t.id===r.id),unique=Boolean(t||armorItems.some(a=>a.id===r.id)),choice=$<HTMLSelectElement>('craft-amount').value;
     const possible=craftableCount(r,inventory,gameMode==='creative',unique);
     const amount=unique?1:choice==='max'?possible:Number(choice);
@@ -279,7 +288,7 @@ function updateDrops(){
 function damage(amount:number,reason:string){
   if(dead||gameMode==='creative')return;amount=protectedDamage(amount,reason,equipment,inventory);health=applyDamage(gameMode,health,amount);updateInventory();
   if(health<=0){
-    dead=true;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;document.exitPointerLock?.();document.body.classList.add('paused');
+    dead=true;active=false;keys.clear();placing=false;flightPointers.clear();lastJumpTap=-Infinity;document.exitPointerLock?.();document.body.classList.add('paused');
     const p=body.translation(),retained=keepInventory||drops.length>=256,result=deathInventory(inventory,retained);
     if(Object.values(result.dropped).some(n=>n>0)){
       // At the bounded drop limit retain this inventory instead of silently deleting it.
@@ -305,7 +314,7 @@ function spawn(){
 }
 function updateCamera(){const p=body.translation();camera.position.set(p.x,p.y+.6,p.z);camera.rotation.set(pitch,yaw,0);}
 function toast(message: string){if(disposed)return;$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{if(!disposed)$('toast').classList.remove('visible');},3000);}
-function snapshot(): Snapshot { const p=body.translation();return {version:1,seed,changes:[...changes],position:{x:p.x,y:p.y,z:p.z},yaw,pitch,selected,night,generatorVersion:worldData.generatorVersion as 1|2,timeSeconds,creatures:creatures.snapshot(),gameMode,health,keepInventory,inventory:{...inventory},drops:structuredClone(drops),weather:weatherChoice,hunger,equipment:{...equipment},durability:{...durability},deadCreatures:[...creatures.dead]}; }
+function snapshot(): Snapshot { const p=body.translation();return {version:1,seed,changes:[...changes],position:{x:p.x,y:p.y,z:p.z},yaw,pitch,selected,night,generatorVersion:worldData.generatorVersion as 1|2,timeSeconds,creatures:creatures.snapshot(),gameMode,health,keepInventory,inventory:{...inventory},drops:structuredClone(drops),weather:weatherChoice,hunger,equipment:{...equipment},stations:structuredClone(stations),durability:{...durability},deadCreatures:[...creatures.dead]}; }
 async function saveWorld(notify=false){
   if(disposed)return false;
   $('save-state').textContent='保存中';
@@ -319,7 +328,7 @@ function updateTarget(){
   const hit=ray.intersectObjects(egg==='fish'?[...chunkRenderer.meshes,...chunkRenderer.liquids]:chunkRenderer.meshes,false)[0];target=null;outline.visible=false;preview.visible=false;$('target-label').textContent='';
   if(!active)return;if(!hit){$('target-label').textContent='请对准 6 格内的方块';return;}
   const normal=hit.face!.normal.clone(),p=[Math.floor(hit.point.x+.5-normal.x*.01),Math.floor(hit.point.y+.5-normal.y*.01),Math.floor(hit.point.z+.5-normal.z*.01)];target={position:p,normal,type:hit.object.userData.water?6:worldData.get(p[0],p[1],p[2])};
-  outline.position.set(p[0],p[1],p[2]);outline.visible=true;const [x,y,z]=placement();const reason=egg?'':canPlace(x,y,z);preview.position.set(x,y,z);preview.material.color.set(reason?0xf16d68:0x83df9d);preview.visible=true;
+  outline.position.set(p[0],p[1],p[2]);outline.visible=true;const [x,y,z]=placement();const reason=egg?'':canPlace(x,y,z);preview.position.set(x,y,z);preview.material.color.set(reason?0xf16d68:0x83df9d);preview.visible=Boolean(egg||selected<=MAX_BLOCK_ID&&(gameMode==='creative'||(inventory[selected]??0)>0))&&(![20,23].includes(target.type)||keys.has('ShiftLeft')||keys.has('ShiftRight'));
   if(target.type===20){$('target-label').textContent='工作台 · R 打开合成 · Shift + R 放置';return;}
   $('target-label').textContent=`${types[target.type-1].name} · ${egg?'生成'+creatureTypes.find(c=>c.id===egg)!.name:reason||(selected>MAX_BLOCK_ID?'使用 '+itemName(selected):'可放置 '+types[selected-1].name)}`;
 }
@@ -334,8 +343,8 @@ function sound(place=false){
 function edit(place: boolean,completed=false){
   if(!active)return;
   updateTarget();
-  if(place&&target?.type===20&&!keys.has('ShiftLeft')&&!keys.has('ShiftRight')){openPanel('materials-panel');$('materials-title').textContent='工作台 · 合成';$<HTMLButtonElement>('inventory-reset').click();document.querySelector<HTMLButtonElement>('[data-category=recipes]')?.click();toast('已打开工作台；合成数量在上方设置');return;}
-  if(place&&selected>=200){eat();return;}
+  if(place&&target&&[20,23].includes(target.type)&&!keys.has('ShiftLeft')&&!keys.has('ShiftRight')){const k=target.position.join(',');if(!stations[k]){if(Object.keys(stations).length>=128){toast('最多保存 128 个工作台和熔炉，请先清理闲置设施');return;}stations[k]=createStation(target.type===20?'workbench':'furnace');}stationPanel.open(k,stations[k]);openPanel('station-panel');return;}
+  if(place&&selected>=200){placing=false;eat();return;}
   if(!place&&!completed){
     const hit=creatures.hit(ray),blockHit=ray.intersectObjects(chunkRenderer.meshes,false)[0];
     if(hit&&hit.distance<=4&&(!blockHit||hit.distance<blockHit.distance)){
@@ -360,10 +369,10 @@ function edit(place: boolean,completed=false){
     if(changes.size>=30000&&!changes.has(key(x,y,z))){toast('已达到此世界的修改上限');return;}
     for(let i=0;i<9;i++){const mesh=new THREE.Mesh(particleGeometry,particleMaterials[target.type-1]);mesh.position.set(x,y,z);scene.add(mesh);particles.push({mesh,velocity:new THREE.Vector3((Math.random()-.5)*3,Math.random()*3,(Math.random()-.5)*3),life:.6});}
     if(drops.length>=256){toast('掉落物已满，请先拾取');return;}
-    const loot:Inventory={[ores.find(o=>o.id===target!.type)?.resource??target.type]:1};
+    const stationKey=key(x,y,z);const loot:Inventory=stationContents(stations[stationKey]??createStation('workbench'));const dropId=[15,16,17].includes(target.type)?target.type:ores.find(o=>o.id===target!.type)?.resource??target.type;loot[dropId]=(loot[dropId]??0)+1;
     if([5,13].includes(target.type))loot[timeSeconds%2<1?200:201]=1;
     if(target.type===1)loot[206]=1;
-    dropItems(x,y,z,loot);wearTool();
+    dropItems(x,y,z,loot);delete stations[stationKey];wearTool();
     worldData.set(x,y,z,0);blockLights.set(key(x,y,z),0);mined++;
   }
   updateInventory();sound(place);chunkRenderer.rebuild(x,z);updateColliders(true);rebuildMap();physics.step();scheduleSave();updateTarget();
@@ -411,7 +420,7 @@ function enter(){
 }
 listen(document,'pointerlockerror',useDragControls);
 function pause(){
-  mining=null;entering=false;lookPointer=null;if(!started)return;active=false;keys.clear();flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
+  mining=null;entering=false;lookPointer=null;if(!started)return;active=false;keys.clear();placing=false;flightPointers.clear();lastJumpTap=-Infinity;joystick.x=joystick.y=0;$('stick').style.transform='';
   document.exitPointerLock?.();document.body.classList.add('paused');if(!$<HTMLDialogElement>('menu').open)$<HTMLDialogElement>('menu').showModal();void saveWorld();
 }
 listen(document,'pointerlockchange',()=>{
@@ -437,13 +446,13 @@ for(const [id,direction] of [['flight-up',1],['flight-down',-1]] as const){
   for(const event of ['pointerup','pointercancel','lostpointercapture'] as const)listen(button,event,e=>{flightPointers.delete(e.pointerId);});
 }
 listen(document,'keydown',e=>{
-  if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open], #help-panel[open]'))return;
+  if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||document.querySelector('#settings-panel[open], #materials-panel[open], #help-panel[open], #station-panel[open]'))return;
   if(e.code==='Escape'&&active){e.preventDefault();pause();return;}
   if(!active)return;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
   if(e.code==='KeyT'){freeLook=!freeLook;toast(freeLook?'触控板转向已开启':'光标已释放，按 T 恢复转向');return;}
   if(e.code==='KeyF'&&!e.repeat){edit(false);return;}
-  if(e.code==='KeyR'&&!e.repeat){edit(true);return;}
+  if(e.code==='KeyR'&&!e.repeat){beginPlace();return;}
   if(e.code==='KeyH'){e.preventDefault();openPanel('help-panel');return;}
   if(e.code==='KeyE'){e.preventDefault();openPanel('materials-panel');return;}
   if(e.code==='KeyB'){e.preventDefault();pickMaterial();return;}
@@ -456,11 +465,12 @@ listen(document,'keydown',e=>{
     lastJumpTap=now;if(!flying&&grounded)verticalVelocity=7.7;
   }
 });
-listen(document,'keyup',e=>keys.delete(e.code));
-listen(window,'blur',()=>{keys.clear();flightPointers.clear();lastJumpTap=-Infinity;if(active)pause();});
+listen(document,'keyup',e=>{keys.delete(e.code);if(e.code==='KeyR')placing=false;});
+listen(window,'mouseup',e=>{if(e.button===2)placing=false;});
+listen(window,'blur',()=>{keys.clear();placing=false;flightPointers.clear();lastJumpTap=-Infinity;if(active)pause();});
 listen(document,'visibilitychange',()=>{if(document.hidden&&active)pause();});
 listen($('world'),'contextmenu',e=>e.preventDefault());
-listen($('world'),'mousedown',e=>{if(touch||dragControls)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)edit(true);if(e.button===1){e.preventDefault();pickMaterial();}});
+listen($('world'),'mousedown',e=>{if(touch||dragControls)return;if(!active){if(started)enter();return;}if(e.button===0)edit(false);if(e.button===2)beginPlace();if(e.button===1){e.preventDefault();pickMaterial();}});
 listen($('world'),'wheel',e=>{if(!active)return;e.preventDefault();if(dragControls){yaw-=e.deltaX*.004*settings.sensitivity;pitch=THREE.MathUtils.clamp(pitch-e.deltaY*.004*settings.sensitivity,-1.5,1.5);}else quickbar.cycle(e.deltaY>0?1:-1);},{passive:false});
 $('play').onclick=enter;$('resume').onclick=enter;$('close-menu').onclick=enter;$('pause').onclick=pause;
 listen($('menu'),'cancel',e=>{e.preventDefault();enter();});
@@ -469,10 +479,12 @@ $('world-list').onclick=async()=>{if(await saveWorld())leave();else toast('存�
 $('day-toggle').onclick=()=>toggleDay();
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{toast('此浏览器不支持全屏');}};
 $('pick-material').onclick=pickMaterial;
-$('break').onclick=()=>edit(false);$('place').onclick=()=>edit(true);$('jump').onpointerdown=e=>{e.preventDefault();if(active)verticalVelocity=grounded?7.7:body.translation().y<worldData.waterLevel(Math.round(body.translation().x),Math.round(body.translation().z))?3:verticalVelocity;};
+$('break').onclick=()=>edit(false);$('place').onpointerdown=e=>{e.preventDefault();beginPlace();try{$('place').setPointerCapture(e.pointerId);}catch{}};
+for(const event of ['pointerup','pointercancel','lostpointercapture'] as const)listen($('place'),event,()=>{placing=false;});$('jump').onpointerdown=e=>{e.preventDefault();if(active)verticalVelocity=grounded?7.7:body.translation().y<worldData.waterLevel(Math.round(body.translation().x),Math.round(body.translation().z))?3:verticalVelocity;};
 let lookPointer: { id:number; x:number; y:number; startX:number; startY:number; button:number; moved:boolean } | null;
 listen($('world'),'pointerdown',e=>{
   if((!touch&&!dragControls)||!active)return;
+  if(e.button===2){beginPlace();return;}
   lookPointer={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,button:e.button,moved:false};
   $('world').setPointerCapture(e.pointerId);
 });
@@ -485,12 +497,13 @@ listen($('world'),'pointermove',e=>{
   lookPointer.x=e.clientX;lookPointer.y=e.clientY;
 });
 listen($('world'),'pointerup',e=>{
+  if(e.button===2){placing=false;return;}
   if(!lookPointer||e.pointerId!==lookPointer.id)return;
   const pointer=lookPointer;lookPointer=null;
   if(active&&dragControls&&!pointer.moved){if(pointer.button===0)edit(false);if(pointer.button===2)edit(true);if(pointer.button===1)pickMaterial();}
 });
-listen($('world'),'pointercancel',()=>{lookPointer=null;});
-listen($('world'),'lostpointercapture',()=>{lookPointer=null;});
+listen($('world'),'pointercancel',()=>{lookPointer=null;placing=false;});
+listen($('world'),'lostpointercapture',()=>{lookPointer=null;placing=false;});
 let stickPointer: number | null;
 function moveStick(e: PointerEvent){const r=$('joystick').getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/35,y=(e.clientY-r.top-r.height/2)/35;const len=Math.hypot(x,y);if(len>1){x/=len;y/=len;}joystick.x=x;joystick.y=y;$('stick').style.transform=`translate(${x*29}px,${y*29}px)`;}
 $('joystick').onpointerdown=e=>{stickPointer=e.pointerId;$('joystick').setPointerCapture(e.pointerId);moveStick(e);};
@@ -500,6 +513,7 @@ listen(window,'resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updatePr
 
 function step(dt: number){
   if(dead)return;
+  if(placing){placeTimer-=dt;if(placeTimer<=0){placeTimer=.18;edit(true);if(!active)return;}}
   attackCooldown=Math.max(0,attackCooldown-dt);
   if(mining){updateTarget();if(!target||target.position.join(',')!==mining.key)mining=null;else{mining.elapsed+=dt;$<HTMLProgressElement>('mining-progress').value=Math.min(1,mining.elapsed/mining.duration);if(mining.elapsed>=mining.duration){mining=null;edit(false,true);}}}
   $<HTMLProgressElement>('mining-progress').hidden=!mining;
@@ -535,6 +549,7 @@ let last=0,accumulator=0,frames=0;
 function animate(time: number){
   if(disposed)return;
   animationId=requestAnimationFrame(animate);const elapsed=last?Math.max(0,(time-last)/1000):0,dt=Math.min(elapsed,.05);last=time;
+  if(!document.hidden&&(active||$<HTMLDialogElement>('station-panel').open)){for(const station of Object.values(stations))if(station.kind==='furnace')advanceFurnace(station,dt);if(frames%15===0)stationPanel.refresh();}
   timeSeconds=advanceTime(timeSeconds,elapsed,active);stream();if(active)creatures.update(dt,night);updateDay();
   if(active){accumulator+=dt;while(accumulator>=1/60){step(1/60);accumulator-=1/60;if(!active){accumulator=0;break;}}}
   else accumulator=0;
@@ -559,11 +574,11 @@ async function init(){
   if(saved)$('gate-meta').textContent='广袤世界 · 六大地貌 · 10 分钟一天';
   // Read-only diagnostics make browser smoke tests inspect the real simulation.
   window.__voxel={getState:()=>({ready,active,flying,seed,selected,night,grounded,yaw,pitch,position:{...body.translation()},target:target?{position:[...target.position],normal:target.normal.toArray(),type:target.type}:null,changes:changes.size,mined,placed,blocks:chunkRenderer.chunks.size*256,loadedChunks:chunkRenderer.chunks.size,cachedChunks:worldData.cachedChunks,creatures:creatures.counts,eggCreatures:creatures.snapshot().length,gameMode,health,hunger,equipment:{...equipment},armorDefense:armorDefense(equipment,inventory),durability:{...durability},keepInventory,inventory:{...inventory},drops:drops.length,weather:weatherSystem.kind,starsOpacity:(weatherSystem.stars.material as THREE.PointsMaterial).opacity,dead,timeSeconds,gameHour:clockState(timeSeconds).hour,biome:worldData.biome(Math.round(body.translation().x),Math.round(body.translation().z)),lightSources:blockLights.activeCount,drawCalls:renderer.info.render.calls})};
-  animationId=requestAnimationFrame(animate);saveInterval=setInterval(()=>{if(active)void saveWorld();},15000);
+  animationId=requestAnimationFrame(animate);saveInterval=setInterval(()=>{if(active||$<HTMLDialogElement>('station-panel').open)void saveWorld();},15000);
 }
 function disposeGame() {
     if(disposed)return;
-    disposed=true;active=false;quickbar.dispose();inventoryBrowser?.dispose();recipeTracker.dispose();equipmentPanel.dispose();events.abort();cancelAnimationFrame(animationId);clearInterval(saveInterval);clearTimeout(saveTimer);clearTimeout(toastTimer);
+    disposed=true;active=false;quickbar.dispose();inventoryBrowser?.dispose();recipeTracker.dispose();equipmentPanel.dispose();stationPanel.dispose();events.abort();cancelAnimationFrame(animationId);clearInterval(saveInterval);clearTimeout(saveTimer);clearTimeout(toastTimer);
     document.exitPointerLock?.();document.body.classList.remove('playing','paused','touch');
     blockLights.dispose();chunkRenderer.dispose();creatures.dispose();weatherSystem.dispose();
     for(const mesh of dropMeshes.values())scene.remove(mesh);dropGeometry.dispose();dropMaterial.dispose();
