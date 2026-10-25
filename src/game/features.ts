@@ -19,6 +19,7 @@ export const blockTypes = [
   {id:22,name:'灯笼',color:'#ffdd9b',side:'#6a7277',description:'铁与煤合成；暖光照亮半径 14 格。'},
   {id:23,name:'熔炉',color:'#686e73',side:'#343940',description:'8 个岩石合成；放入原料和燃料进行熔炼。'},
   {id:24,name:'玻璃',color:'#b6e2e8',side:'#84bec9',description:'熔炼细沙获得的建筑材料。'},
+  {id:25,name:'箱子',color:'#b18449',side:'#74502c',description:'8 木板在工作台合成；27 格储存方块、食物和材料。对准按 R 打开。'},
 ];
 export type Settings = { sensitivity: number; touchSensitivity: number; fov: number; volume: number; quality: 'low' | 'medium' | 'high'; shadows: boolean };
 export const defaults: Settings = { sensitivity: 1, touchSensitivity: 1, fov: 68, volume: 60, quality: 'high', shadows: true };

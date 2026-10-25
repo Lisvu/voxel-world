@@ -2,7 +2,7 @@ import { armorItems } from './armor.js';
 import { toolMaterials, tools, validItem } from './items.js';
 
 export type Stack = { id: number; count: number };
-export type Station = { kind: 'workbench' | 'furnace'; slots: (Stack | null)[]; progress: number; burn: number };
+export type Station = { kind: 'workbench' | 'furnace' | 'chest'; slots: (Stack | null)[]; progress: number; burn: number };
 export type StationRecipe = { id: number; name: string; pattern: (number | null)[]; output: Stack };
 export const furnaceRecipes: Readonly<Record<number, number>> = {15:31,16:32,17:33,6:24,202:203,204:208};
 export const furnaceFuels: Readonly<Record<number, number>> = {30:64,4:16,7:16};
@@ -16,6 +16,7 @@ export const stationRecipes: StationRecipe[] = [
   recipe(20,'工作台',[4,4,null, 4,4,null, null,null,null]),
   recipe(21,'火把',[30,null,null, 4,null,null, null,null,null]),
   recipe(22,'灯笼',[32,30,32, null,null,null, null,null,null]),
+  recipe(25,'箱子',[7,7,7, 7,null,7, 7,7,7]),
   recipe(23,'熔炉',[3,3,3, 3,null,3, 3,3,3]),
   recipe(205,'面包',[206,206,206, null,null,null, null,null,null]),
   ...tools.map(tool => {
@@ -42,7 +43,7 @@ export const stationRecipes: StationRecipe[] = [
 ];
 
 export function createStation(kind: Station['kind']): Station {
-  return {kind,slots:Array(kind === 'workbench' ? 9 : 3).fill(null),progress:0,burn:0};
+  return {kind,slots:Array(kind === 'workbench' ? 9 : kind === 'chest' ? 27 : 3).fill(null),progress:0,burn:0};
 }
 
 function validStack(stack: Stack): boolean {
@@ -50,8 +51,8 @@ function validStack(stack: Stack): boolean {
 }
 
 function validSlots(station: Station): boolean {
-  return !!station && (station.kind === 'workbench' || station.kind === 'furnace') &&
-    Array.isArray(station.slots) && station.slots.length === (station.kind === 'workbench' ? 9 : 3) &&
+  return !!station && (station.kind === 'workbench' || station.kind === 'furnace' || station.kind === 'chest') &&
+    Array.isArray(station.slots) && station.slots.length === (station.kind === 'workbench' ? 9 : station.kind === 'chest' ? 27 : 3) &&
     station.slots.every(stack => stack === null || validStack(stack));
 }
 

@@ -41,3 +41,5 @@
   #station-panel #station-output { min-height:36px; padding:6px; }
   #station-panel .station-transfer { grid-template-columns:minmax(0,1fr) 86px; gap:8px; }
 }
+
+#station-panel .station-chest { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; min-width:0; }

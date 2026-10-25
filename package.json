@@ -34,7 +34,9 @@
     "test:flight:browser": "node tests/flight-browser.mjs",
     "test:stations": "npm run build:server && node --experimental-transform-types --test tests/stations.test.mjs tests/station-contracts.test.mjs",
     "test:stations:browser": "node tests/station-panel-browser.mjs && node tests/station-world-browser.mjs",
-    "test:placement:browser": "node tests/placement-browser.mjs"
+    "test:placement:browser": "node tests/placement-browser.mjs",
+    "test:chest": "npm run build:server && node --test tests/chest.test.mjs",
+    "test:chest:browser": "node tests/chest-browser.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",

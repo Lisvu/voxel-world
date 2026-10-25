@@ -31,6 +31,7 @@ const stationStackSchema=z.object({
 const stationSlotSchema=stationStackSchema.nullable();
 const furnaceSlotSchema=(ids:number[])=>stationSlotSchema.refine(stack=>stack===null||ids.includes(stack.id),'熔炉槽位物品无效');
 export const stationSchema:z.ZodType<Station>=z.discriminatedUnion('kind',[
+  z.object({kind:z.literal('chest'),slots:z.array(stationSlotSchema).length(27),progress:z.literal(0),burn:z.literal(0)}).strict(),
   z.object({kind:z.literal('workbench'),slots:z.array(stationSlotSchema).length(9),progress:z.literal(0),burn:z.literal(0)}).strict(),
   z.object({kind:z.literal('furnace'),slots:z.tuple([
     furnaceSlotSchema([15,16,17,6,202,204]),furnaceSlotSchema([30,4,7]),furnaceSlotSchema([31,32,33,24,203,208]),
@@ -61,7 +62,7 @@ export const snapshotSchema = z.object({
 }).strict().superRefine((snapshot,ctx)=>{
   for(const slot of armorSlots){const id=snapshot.equipment[slot];if(id!==undefined&&(snapshot.inventory[id]??0)<1)ctx.addIssue({code:'custom',path:['equipment',slot],message:'穿戴装备必须在背包中'});}
   const blocks=new Map(snapshot.changes);
-  for(const [key,station] of Object.entries(snapshot.stations))if(blocks.get(key)!==(station.kind==='workbench'?20:23))ctx.addIssue({code:'custom',path:['stations',key],message:'工作站必须对应已保存的工作台或熔炉方块'});
+  for(const [key,station] of Object.entries(snapshot.stations))if(blocks.get(key)!==(station.kind==='workbench'?20:station.kind==='chest'?25:23))ctx.addIssue({code:'custom',path:['stations',key],message:'设施必须对应已保存的工作台、熔炉或箱子方块'});
 });
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export function snapshotFingerprint(snapshot: Snapshot): string {

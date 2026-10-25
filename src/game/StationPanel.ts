@@ -1,4 +1,5 @@
-import { validItem } from '../../shared/items';
+import { armorItems } from '../../shared/armor';
+import { tools, validItem } from '../../shared/items';
 import { craftStation, fillRecipe, matchRecipe, stationRecipes, transferBack, transferTo, type Station } from '../../shared/stations';
 import './station-panel.css';
 
@@ -86,11 +87,11 @@ export function createStationPanel(options: StationPanelOptions) {
     renderedKind = kind;
     cells.length = 0;
     slots.replaceChildren();
-    slots.className = kind === 'workbench' ? 'station-grid' : 'station-furnace';
-    for (let index = 0; index < (kind === 'workbench' ? 9 : 3); index++) {
+    slots.className = kind === 'workbench' ? 'station-grid' : kind === 'chest' ? 'station-chest' : 'station-furnace';
+    for (let index = 0; index < (kind === 'workbench' ? 9 : kind === 'chest' ? 27 : 3); index++) {
       const cell = document.createElement('div');
       cell.className = 'station-cell';
-      const label = kind === 'workbench' ? `材料格 ${index + 1}` : ['原料', '燃料', '产物'][index];
+      const label = kind === 'chest' ? `储物格 ${index + 1}` : kind === 'workbench' ? `材料格 ${index + 1}` : ['原料', '燃料', '产物'][index];
       const heading = document.createElement('span');
       heading.className = 'station-cell-label';
       heading.textContent = label;
@@ -121,8 +122,9 @@ export function createStationPanel(options: StationPanelOptions) {
     const scroll = dialog.scrollTop;
     const inventory = options.inventory();
     const creative = options.creative();
-    const ids = creative ? Array.from({ length: 511 }, (_, i) => i + 1).filter(validItem)
-      : Object.keys(inventory).map(Number).filter(id => inventory[id] > 0 && validItem(id));
+    const storable=(id:number)=>validItem(id)&&!tools.some(t=>t.id===id)&&!armorItems.some(a=>a.id===id);
+    const ids = creative ? Array.from({ length: 511 }, (_, i) => i + 1).filter(storable)
+      : Object.keys(inventory).map(Number).filter(id => inventory[id] > 0 && storable(id));
     // Preserve a just-exhausted selection so frequent furnace ticks never move focus or selection.
     if (item.value && !ids.includes(Number(item.value))) ids.push(Number(item.value));
     ids.sort((a, b) => a - b);
@@ -144,7 +146,7 @@ export function createStationPanel(options: StationPanelOptions) {
       const stack = station.slots[index];
       cell.name.textContent = stack ? options.name(stack.id) : '空';
       cell.count.textContent = stack ? `× ${stack.count}` : furnace && index === 2 ? '等待冶炼' : '点击放入';
-      const label = furnace ? ['原料', '燃料', '产物'][index] : `材料格 ${index + 1}`;
+      const label = station.kind==='chest' ? `储物格 ${index + 1}` : furnace ? ['原料', '燃料', '产物'][index] : `材料格 ${index + 1}`;
       cell.button.setAttribute('aria-label', `${label}：${stack ? `${options.name(stack.id)} ${stack.count} 个` : '空'}${furnace && index === 2 ? '，点击取回' : '，点击放入'}`);
       cell.button.dataset.occupied = String(Boolean(stack));
       cell.take.disabled = !stack;
@@ -166,12 +168,13 @@ export function createStationPanel(options: StationPanelOptions) {
       dialog.dataset.stationKey = key;
       buildSlots(next.kind);
       const furnace = next.kind === 'furnace';
-      title.textContent = furnace ? '熔炉' : '工作台';
-      description.textContent = furnace ? '放入原料和燃料，每 8 秒冶炼一份。关闭面板后，在游戏进行时继续冶炼。' : '在 3 × 3 网格中摆放材料，也可以选择配方自动填入。';
-      get('station-recipe-controls').hidden = furnace;
-      get('station-result').hidden = furnace;
+      const chest=next.kind==='chest';
+      title.textContent = chest ? '箱子 · 27 格' : furnace ? '熔炉' : '工作台';
+      description.textContent = chest ? '储存方块、食物和材料，每格最多 64 件。工具和装备暂不支持入箱。' : furnace ? '放入原料和燃料，每 8 秒冶炼一份。关闭面板后，在游戏进行时继续冶炼。' : '在 3 × 3 网格中摆放材料，也可以选择配方自动填入。';
+      get('station-recipe-controls').hidden = furnace || chest;
+      get('station-result').hidden = furnace || chest;
       get('station-furnace-status').hidden = !furnace;
-      get('station-layout').classList.toggle('is-furnace', furnace);
+      get('station-layout').classList.toggle('is-furnace', furnace || chest);
       status.textContent = options.creative() ? '创造模式可免费放入材料。' : '';
       refresh();
     },

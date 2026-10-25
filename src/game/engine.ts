@@ -100,6 +100,7 @@ function texture(type: typeof types[number], face='side') {
     else {for(let x=1;x<16;x+=3){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+1,16);ctx.stroke();}}
   }
   if(type.id===7){ctx.fillStyle='#745b3988';for(let y=3;y<16;y+=4)ctx.fillRect(0,y,16,1);ctx.fillRect(5,0,1,3);ctx.fillRect(12,4,1,3);ctx.fillRect(8,8,1,3);}
+  if(type.id===25){ctx.strokeStyle='#533a25';ctx.lineWidth=2;ctx.strokeRect(1,1,14,14);if(face==='side'){ctx.fillStyle='#533a25';ctx.fillRect(0,5,16,2);ctx.fillStyle='#e4cf83';ctx.fillRect(7,5,2,5);}}
   if(type.id===23){ctx.fillStyle='#34383c';ctx.fillRect(2,3,12,4);ctx.fillRect(3,10,10,5);ctx.fillStyle='#8d9499';ctx.fillRect(2,8,12,1);}
   if(type.id===24){ctx.clearRect(2,2,12,12);ctx.strokeStyle='#d3f4f8';ctx.strokeRect(.5,.5,15,15);ctx.fillStyle='#e7ffff';ctx.fillRect(3,3,2,5);ctx.fillRect(5,6,2,3);}
   if(type.id===3){ctx.fillStyle='#4d575630';ctx.fillRect(2,4,4,2);ctx.fillRect(9,10,5,2);}
@@ -328,7 +329,7 @@ function updateTarget(){
   const hit=ray.intersectObjects(egg==='fish'?[...chunkRenderer.meshes,...chunkRenderer.liquids]:chunkRenderer.meshes,false)[0];target=null;outline.visible=false;preview.visible=false;$('target-label').textContent='';
   if(!active)return;if(!hit){$('target-label').textContent='请对准 6 格内的方块';return;}
   const normal=hit.face!.normal.clone(),p=[Math.floor(hit.point.x+.5-normal.x*.01),Math.floor(hit.point.y+.5-normal.y*.01),Math.floor(hit.point.z+.5-normal.z*.01)];target={position:p,normal,type:hit.object.userData.water?6:worldData.get(p[0],p[1],p[2])};
-  outline.position.set(p[0],p[1],p[2]);outline.visible=true;const [x,y,z]=placement();const reason=egg?'':canPlace(x,y,z);preview.position.set(x,y,z);preview.material.color.set(reason?0xf16d68:0x83df9d);preview.visible=Boolean(egg||selected<=MAX_BLOCK_ID&&(gameMode==='creative'||(inventory[selected]??0)>0))&&(![20,23].includes(target.type)||keys.has('ShiftLeft')||keys.has('ShiftRight'));
+  outline.position.set(p[0],p[1],p[2]);outline.visible=true;const [x,y,z]=placement();const reason=egg?'':canPlace(x,y,z);preview.position.set(x,y,z);preview.material.color.set(reason?0xf16d68:0x83df9d);preview.visible=Boolean(egg||selected<=MAX_BLOCK_ID&&(gameMode==='creative'||(inventory[selected]??0)>0))&&(![20,23,25].includes(target.type)||keys.has('ShiftLeft')||keys.has('ShiftRight'));
   if(target.type===20){$('target-label').textContent='工作台 · R 打开合成 · Shift + R 放置';return;}
   $('target-label').textContent=`${types[target.type-1].name} · ${egg?'生成'+creatureTypes.find(c=>c.id===egg)!.name:reason||(selected>MAX_BLOCK_ID?'使用 '+itemName(selected):'可放置 '+types[selected-1].name)}`;
 }
@@ -343,7 +344,7 @@ function sound(place=false){
 function edit(place: boolean,completed=false){
   if(!active)return;
   updateTarget();
-  if(place&&target&&[20,23].includes(target.type)&&!keys.has('ShiftLeft')&&!keys.has('ShiftRight')){const k=target.position.join(',');if(!stations[k]){if(Object.keys(stations).length>=128){toast('最多保存 128 个工作台和熔炉，请先清理闲置设施');return;}stations[k]=createStation(target.type===20?'workbench':'furnace');}stationPanel.open(k,stations[k]);openPanel('station-panel');return;}
+  if(place&&target&&[20,23,25].includes(target.type)&&!keys.has('ShiftLeft')&&!keys.has('ShiftRight')){const k=target.position.join(',');if(!stations[k]){if(Object.keys(stations).length>=128){toast('最多保存 128 个工作台、熔炉和箱子，请先清理闲置设施');return;}stations[k]=createStation(target.type===20?'workbench':target.type===25?'chest':'furnace');}stationPanel.open(k,stations[k]);openPanel('station-panel');return;}
   if(place&&selected>=200){placing=false;eat();return;}
   if(!place&&!completed){
     const hit=creatures.hit(ray),blockHit=ray.intersectObjects(chunkRenderer.meshes,false)[0];
